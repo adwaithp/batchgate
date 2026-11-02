@@ -123,6 +123,8 @@ class COADocument(Base):
     )
     extraction_error: Mapped[str | None] = mapped_column(Text)
     extraction_model: Mapped[str | None] = mapped_column(String(64))
+    # A person who saved values over the model's reading (checked or corrected them).
+    checked_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     issuer_name: Mapped[str | None] = mapped_column(String(255))
     product_name: Mapped[str | None] = mapped_column(String(255))
     cas_number: Mapped[str | None] = mapped_column(String(32))

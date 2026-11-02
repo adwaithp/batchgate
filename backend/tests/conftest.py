@@ -1,6 +1,8 @@
 import os
 
 os.environ.setdefault("BATCHGATE_BCRYPT_ROUNDS", "4")  # fast hashing in tests only
+os.environ["ANTHROPIC_API_KEY"] = ""  # never call Claude or queue jobs; tests opt in with fakes
+os.environ["BATCHGATE_DATABASE_URL"] = "sqlite://"  # never touch the local demo database
 
 import pytest
 from fastapi.testclient import TestClient

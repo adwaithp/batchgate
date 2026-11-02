@@ -6,6 +6,7 @@ Every way a check can be triggered goes through run_check(). Nothing else writes
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -37,6 +38,12 @@ from app.models.enums import (
     SupplierKind,
 )
 from app.services import audit
+from app.services.extraction.reader import (
+    CoaExtraction,
+    ExtractedRow,
+    ExtractionFailed,
+    read_coa,
+)
 from app.services.rules.engine import ENGINE_VERSION, check_batch
 from app.services.rules.matching import match_results
 from app.services.rules.types import (
@@ -367,7 +374,7 @@ def ingest_coa(
     actor: User | None,
     origin: str = "upload",
 ) -> COADocument:
-    """The single way a COA enters BatchGate. Later: the model reads it here, then run_check()."""
+    """The single way a COA enters BatchGate. A file is then read by the worker (extract_coa)."""
     if batch.status in TERMINAL:
         raise WorkflowError(f"Batch {batch.batch_number} is {batch.status.value}; it is closed.")
 
@@ -451,7 +458,7 @@ def save_coa_data(
     actor: User | None,
     model: str | None = None,
 ) -> Verdict | None:
-    """Store the values read off a COA (typed by a person now, by the model later) and re-check."""
+    """Store the values read off a COA (by the model, or typed by a person) and re-check."""
     batch = coa.batch
     if batch.status in TERMINAL:
         raise WorkflowError(f"Batch {batch.batch_number} is {batch.status.value}; it is closed.")
@@ -473,8 +480,11 @@ def save_coa_data(
         for r in rows
         if r.raw_value and r.raw_value.strip()
     ]
+    if model is None and coa.extraction_model not in (None, "manual"):
+        coa.checked_by_id = actor.id if actor else None  # the model's reading, checked by a person
+    else:
+        coa.extraction_model = model or "manual"
     coa.extraction_status = ExtractionStatus.DONE
-    coa.extraction_model = model or "manual"
     db.flush()
     audit.record(
         db,
@@ -483,9 +493,101 @@ def save_coa_data(
         entity_type="coa",
         entity_id=coa.id,
         rows=len(coa.results),
-        by=coa.extraction_model,
+        by=model or "manual",
     )
     return run_check(db, batch, actor=actor)
+
+
+Reader = Callable[[Path, str, list[ParamSpec]], CoaExtraction]
+
+
+def extract_coa(db: Session, coa: COADocument, *, read: Reader = read_coa) -> None:
+    """Have the model read an uploaded COA, then save its values like a person would.
+
+    Runs in the worker, minutes or seconds after ingest_coa(). Any failure leaves the COA
+    for manual entry. Low-confidence rows reach the engine as such and send the batch to REVIEW.
+    """
+    if coa.extraction_status != ExtractionStatus.PENDING or not coa.storage_path:
+        return
+    spec = spec_input(coa.batch.line.spec) if coa.batch.line else None
+    extraction = error = None
+    try:
+        extraction = read(
+            Path(coa.storage_path), coa.content_type or "", spec.parameters if spec else []
+        )
+    except ExtractionFailed as e:
+        error = str(e)
+    else:
+        if not extraction.is_coa:
+            error = "This file doesn't look like a certificate of analysis."
+        elif not extraction.results:
+            error = "No test results were found on this COA."
+
+    # Reading takes a while: a person may have typed the values in, or a newer COA arrived.
+    db.expire_all()
+    if (
+        coa.extraction_status != ExtractionStatus.PENDING
+        or coa.superseded
+        or coa.batch.status in TERMINAL
+    ):
+        return
+
+    coa.raw_extraction = extraction.model_dump(mode="json") if extraction else None
+    if error or extraction is None:
+        coa.extraction_status = ExtractionStatus.FAILED
+        coa.extraction_error = error
+        db.flush()
+        audit.record(
+            db,
+            actor=None,
+            action="coa_extraction_failed",
+            entity_type="coa",
+            entity_id=coa.id,
+            error=error,
+        )
+        return
+
+    header = CoaHeader(
+        product_name=extraction.product_name,
+        cas_number=extraction.cas_number,
+        batch_number=extraction.batch_number,
+        po_reference=extraction.po_reference,
+        mfg_date=extraction.mfg_date,
+        test_date=extraction.test_date,
+        expiry_date=extraction.expiry_date,
+    )
+    rows = _rows_with_hints(spec, extraction.results)
+    save_coa_data(db, coa, header, rows, actor=None, model=get_settings().extraction_model)
+
+
+def _rows_with_hints(spec: SpecInput | None, extracted: list[ExtractedRow]) -> list[CoaRow]:
+    """Turn the model's rows into CoaRows, using its parameter hints only where names don't match.
+
+    An explicit parameter_id beats name matching in the engine, so a wrong hint would skip the
+    matcher. Names are matched first; a hint only fills a gap the matcher left.
+    """
+    rows = [
+        CoaRow(
+            name_as_written=r.name_as_written,
+            raw_value=r.raw_value,
+            unit=r.unit,
+            method=r.method,
+            confidence=min(max(r.confidence, 0.0), 1.0),
+        )
+        for r in extracted
+    ]
+    if spec is None:
+        return rows
+    inputs = [ResultInput(r.name_as_written, r.raw_value, r.unit) for r in rows]
+    matched, _ = match_results(spec.parameters, inputs)
+    by_name = {id(ri) for ri in matched.values()}
+    claimed = set(matched)
+    valid = {p.id for p in spec.parameters}
+    for row, ri, r in zip(rows, inputs, extracted, strict=True):
+        if id(ri) not in by_name and r.parameter_id in valid and r.parameter_id not in claimed:
+            row.parameter_id = r.parameter_id
+            claimed.add(r.parameter_id)
+    return rows
 
 
 # ---- Human decisions ---------------------------------------------------------------------

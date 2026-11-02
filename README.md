@@ -4,7 +4,7 @@ An AI quality gate for specialty chemical batches.
 
 A partner factory makes a batch, the factory and an independent lab each send a certificate of analysis (COA), and someone has to check every number against what the customer ordered before the batch ships. BatchGate reads those COAs, checks them against the customer's spec, and decides: **release**, **hold**, or **ask a human**.
 
-> Status: the release engine and the batch workflow work end to end, with COA values typed in by hand. Next: Claude reads the COA PDFs and fills those values in.
+> Status: the release engine and the batch workflow work end to end. Claude reads uploaded COA PDFs and scans in the background and fills the values in; a person checks anything it wasn't sure about. Next: evals on a set of synthetic COAs.
 
 ## How it is built
 
@@ -13,7 +13,7 @@ A partner factory makes a batch, the factory and an independent lab each send a 
 | API | FastAPI, SQLAlchemy 2, Pydantic, JWT auth |
 | Web app | Vue 3, TypeScript, Vite, Pinia |
 | Storage | SQLite (zero setup) |
-| COA reading | Claude (vision) — *coming next* |
+| COA reading | Claude (vision, structured output) in an arq worker; progress streamed to the browser (SSE via Redis pub/sub) |
 
 The rule the whole design follows: **AI reads, code decides.** The model turns messy PDFs into structured data; comparing values against limits and making the release decision is plain, tested code.
 
@@ -24,7 +24,7 @@ COA arrives (upload today; email or ERP later)
       ↓
 ingest_coa()            one entry point for every source
       ↓
-values in               typed by a person now, read by Claude next
+values in               read by Claude in a background worker (or typed by a person)
       ↓
 rules engine            spec vs factory COA vs lab COA → release / hold / review, with reasons
       ↓
@@ -56,7 +56,7 @@ Each role sees a different app. Routes check permissions, not role names, so the
 
 ## Run it locally
 
-You need [uv](https://docs.astral.sh/uv/) and Node 20+.
+You need [uv](https://docs.astral.sh/uv/), Node 20+ and Redis (`brew install redis && brew services start redis`). COA reading needs an Anthropic API key in `backend/.env` (see `backend/.env.example`); without one, values are typed in by hand.
 
 ```bash
 # API  → http://localhost:8000/docs
@@ -65,7 +65,11 @@ uv sync
 uv run python -m app.seed        # demo users, customers, specs, orders
 uv run uvicorn app.main:app --reload
 
-# Web app → http://localhost:5173   (in a second terminal)
+# COA reader → reads uploaded COAs with Claude   (in a second terminal)
+cd backend
+uv run arq app.worker.WorkerSettings
+
+# Web app → http://localhost:5173   (in a third terminal)
 cd frontend
 npm install
 npm run dev

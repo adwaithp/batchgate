@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,9 +22,15 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    # LLM (read without prefix so the standard env var works)
-    anthropic_api_key: str | None = None
+    # LLM: the standard ANTHROPIC_API_KEY works, from the shell or from backend/.env
+    anthropic_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "BATCHGATE_ANTHROPIC_API_KEY"),
+    )
     extraction_model: str = "claude-sonnet-5-5"
+
+    # The arq worker reads COAs in the background; progress reaches the browser via Redis.
+    redis_url: str = "redis://localhost:6379"
 
     upload_dir: str = "./uploads"
     max_upload_mb: int = 15
@@ -36,9 +43,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    import os
-
-    settings = Settings()
-    if settings.anthropic_api_key is None:
-        settings.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-    return settings
+    return Settings()

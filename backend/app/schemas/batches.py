@@ -76,6 +76,7 @@ class CoaResultOut(BaseModel):
     unit: str | None
     method: str | None
     confidence: float
+    needs_check: bool  # read with low confidence; a person should compare it with the document
     matched_parameter_id: int | None
 
 
@@ -91,6 +92,9 @@ class CoaOut(BaseModel):
     uploaded_by: str | None
     extraction_status: ExtractionStatus
     extraction_model: str | None
+    extraction_error: str | None
+    warnings: list[str]
+    checked_by: str | None
     product_name: str | None
     cas_number: str | None
     batch_number: str | None
@@ -188,6 +192,8 @@ class CoaRowIn(BaseModel):
     raw_value: str = Field(max_length=255)
     unit: str | None = Field(default=None, max_length=32)
     method: str | None = Field(default=None, max_length=128)
+    # Rows a person typed, edited or ticked as checked are 1.0; untouched model rows keep theirs.
+    confidence: float = Field(default=1.0, ge=0, le=1)
     parameter_id: int | None = None
 
 

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.core.config import get_settings
@@ -22,6 +24,11 @@ def find(client, headers, batch_number):
 def detail(client, headers, batch_number):
     b = find(client, headers, batch_number)
     return client.get(f"/api/batches/{b['id']}", headers=headers).json()
+
+
+def sse(res) -> list[dict]:
+    """The events of a server-sent event stream, in order."""
+    return [json.loads(line[6:]) for line in res.text.splitlines() if line.startswith("data: ")]
 
 
 def act(client, headers, batch_id, action, **body):
@@ -178,9 +185,12 @@ def test_create_batch_upload_coa_and_enter_values(client, login):
         files={"file": ("coa.pdf", PDF, "application/pdf")},
     )
     assert up.status_code == 201, up.text
-    coa = up.json()["coas"][0]
+    received, last = sse(up)
+    assert received["stage"] == "received"
+    coa = received["batch"]["coas"][0]
     assert coa["has_file"] and coa["extraction_status"] == "pending"
-    assert up.json()["status"] == "awaiting_coa"  # values not in yet
+    assert received["batch"]["status"] == "awaiting_coa"  # values not in yet
+    assert last["stage"] == "manual"  # no API key in tests: a person types the values
 
     again = client.post(
         f"/api/batches/{batch['id']}/coas",
@@ -190,7 +200,7 @@ def test_create_batch_upload_coa_and_enter_values(client, login):
     )
     assert again.status_code == 409
 
-    params = up.json()["line_detail"]["spec"]["parameters"]
+    params = received["batch"]["line_detail"]["spec"]["parameters"]
     values = {
         "Ferric chloride (FeCl3)": "40.4",
         "Iron (as Fe)": "13.9",
@@ -249,7 +259,7 @@ def test_new_factory_coa_resets_a_pending_approval(client, login):
         data={"source": "factory"},
         files={"file": ("revised.pdf", PDF + b"rev2", "application/pdf")},
     )
-    body = res.json()
+    body = sse(res)[0]["batch"]
     assert body["status"] == "pending_review"
     assert body["verdict"]["summary"] == "Needs review: Factory COA not received yet."
     assert sum(not c["superseded"] for c in body["coas"]) == 2
