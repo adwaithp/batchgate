@@ -1,0 +1,501 @@
+[
+  {
+    "file": "01_factory_clean.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "factory"
+    },
+    "look": "clean",
+    "expected_decision": "release",
+    "why": "Everything in spec.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": "PO-1042",
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-30",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "FeCl3 content",
+          "raw_value": "40.8",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Total iron (as Fe)",
+          "raw_value": "14.0",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Free acid (as HCl)",
+          "raw_value": "0.28",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Ferrous iron (Fe2+)",
+          "raw_value": "0.10",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Insoluble matter",
+          "raw_value": "0.04",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Specific gravity @ 25 °C",
+          "raw_value": "1.43",
+          "unit": null
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Dark brown liquid",
+          "unit": null
+        }
+      ]
+    }
+  },
+  {
+    "file": "02_lab_clean.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "lab"
+    },
+    "look": "clean",
+    "expected_decision": "release",
+    "why": "Agrees with the factory within tolerance.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": null,
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-31",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "Assay as FeCl3",
+          "raw_value": "40.6",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Fe",
+          "raw_value": "13.95",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Free acidity",
+          "raw_value": "0.30",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Fe(II)",
+          "raw_value": "0.11",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Water insolubles",
+          "raw_value": "0.05",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "SG",
+          "raw_value": "1.432",
+          "unit": "—"
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Complies",
+          "unit": "—"
+        }
+      ]
+    }
+  },
+  {
+    "file": "03_lab_insolubles_out_of_spec.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "lab"
+    },
+    "look": "clean",
+    "expected_decision": "hold",
+    "why": "Lab finds insoluble matter at 0.16 % against max 0.1 %.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": null,
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-31",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "Assay as FeCl3",
+          "raw_value": "40.6",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Fe",
+          "raw_value": "13.95",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Free acidity",
+          "raw_value": "0.30",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Fe(II)",
+          "raw_value": "0.11",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "Water insolubles",
+          "raw_value": "0.16",
+          "unit": "% w/w"
+        },
+        {
+          "name_as_written": "SG",
+          "raw_value": "1.432",
+          "unit": "—"
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Complies",
+          "unit": "—"
+        }
+      ]
+    }
+  },
+  {
+    "file": "04_factory_scanned.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "factory"
+    },
+    "look": "scan",
+    "expected_decision": "release",
+    "why": "Same values as 01, but a skewed, noisy scan (no text layer).",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": "PO-1042",
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-30",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "FeCl3 content",
+          "raw_value": "40.8",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Total iron (as Fe)",
+          "raw_value": "14.0",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Free acid (as HCl)",
+          "raw_value": "0.28",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Ferrous iron (Fe2+)",
+          "raw_value": "0.10",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Insoluble matter",
+          "raw_value": "0.04",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Specific gravity @ 25 °C",
+          "raw_value": "1.43",
+          "unit": null
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Dark brown liquid",
+          "unit": null
+        }
+      ]
+    }
+  },
+  {
+    "file": "05_factory_assay_w_v.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "factory"
+    },
+    "look": "clean",
+    "expected_decision": "review",
+    "why": "Assay reported as % w/v; it can't be converted to % w/w without the density.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": "PO-1042",
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-30",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "FeCl3 content",
+          "raw_value": "58.4",
+          "unit": "% w/v"
+        },
+        {
+          "name_as_written": "Total iron (as Fe)",
+          "raw_value": "14.0",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Free acid (as HCl)",
+          "raw_value": "0.28",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Ferrous iron (Fe2+)",
+          "raw_value": "0.10",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Insoluble matter",
+          "raw_value": "0.04",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Specific gravity @ 25 °C",
+          "raw_value": "1.43",
+          "unit": null
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Dark brown liquid",
+          "unit": null
+        }
+      ]
+    }
+  },
+  {
+    "file": "06_factory_insolubles_below_detection.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "factory"
+    },
+    "look": "clean",
+    "expected_decision": "review",
+    "why": "'< 0.2' doesn't prove the value is below the 0.1 % limit.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": "PO-1042",
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-30",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "FeCl3 content",
+          "raw_value": "40.8",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Total iron (as Fe)",
+          "raw_value": "14.0",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Free acid (as HCl)",
+          "raw_value": "0.28",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Ferrous iron (Fe2+)",
+          "raw_value": "0.10",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Insoluble matter",
+          "raw_value": "< 0.2",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Specific gravity @ 25 °C",
+          "raw_value": "1.43",
+          "unit": null
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Dark brown liquid",
+          "unit": null
+        }
+      ]
+    }
+  },
+  {
+    "file": "07_factory_wrong_batch.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "factory"
+    },
+    "look": "clean",
+    "expected_decision": "review",
+    "why": "The COA is for batch FC-2611-21, not FC-2611-12.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-21",
+      "po_reference": "PO-1042",
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-30",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "FeCl3 content",
+          "raw_value": "40.8",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Total iron (as Fe)",
+          "raw_value": "14.0",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Free acid (as HCl)",
+          "raw_value": "0.28",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Ferrous iron (Fe2+)",
+          "raw_value": "0.10",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Insoluble matter",
+          "raw_value": "0.04",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Specific gravity @ 25 °C",
+          "raw_value": "1.43",
+          "unit": null
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Dark brown liquid",
+          "unit": null
+        }
+      ]
+    }
+  },
+  {
+    "file": "08_factory_missing_ferrous_iron.pdf",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "factory"
+    },
+    "look": "clean",
+    "expected_decision": "review",
+    "why": "Ferrous iron, a critical parameter, is not reported.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": "PO-1042",
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-30",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "FeCl3 content",
+          "raw_value": "40.8",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Total iron (as Fe)",
+          "raw_value": "14.0",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Free acid (as HCl)",
+          "raw_value": "0.28",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Insoluble matter",
+          "raw_value": "0.04",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Specific gravity @ 25 °C",
+          "raw_value": "1.43",
+          "unit": null
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Dark brown liquid",
+          "unit": null
+        }
+      ]
+    }
+  },
+  {
+    "file": "09_factory_phone_photo.jpg",
+    "upload_to": {
+      "batch": "FC-2611-12",
+      "source": "factory"
+    },
+    "look": "photo",
+    "expected_decision": "release",
+    "why": "Same values as 01, photographed at an angle in poor light.",
+    "truth": {
+      "product_name": "Ferric Chloride Solution 40%",
+      "cas_number": "7705-08-0",
+      "batch_number": "FC-2611-12",
+      "po_reference": "PO-1042",
+      "mfg_date": "2026-10-29",
+      "test_date": "2026-10-30",
+      "expiry_date": "2027-10-28",
+      "results": [
+        {
+          "name_as_written": "FeCl3 content",
+          "raw_value": "40.8",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Total iron (as Fe)",
+          "raw_value": "14.0",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Free acid (as HCl)",
+          "raw_value": "0.28",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Ferrous iron (Fe2+)",
+          "raw_value": "0.10",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Insoluble matter",
+          "raw_value": "0.04",
+          "unit": "%"
+        },
+        {
+          "name_as_written": "Specific gravity @ 25 °C",
+          "raw_value": "1.43",
+          "unit": null
+        },
+        {
+          "name_as_written": "Appearance",
+          "raw_value": "Dark brown liquid",
+          "unit": null
+        }
+      ]
+    }
+  }
+]
