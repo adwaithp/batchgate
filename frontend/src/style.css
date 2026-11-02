@@ -1,0 +1,110 @@
+/*
+  BatchGate design tokens.
+  A cool, lab-bench neutral base. The only strong colours are the four batch outcomes,
+  so colour on screen always means "this is the state of a batch".
+*/
+:root {
+  --paper: #edf1f3;
+  --surface: #ffffff;
+  --surface-2: #f6f8f9;
+  --ink: #17242e;
+  --ink-2: #51606b;
+  --ink-3: #7c8a94;
+  --line: #d3dbe0;
+  --brand: #1e3a5f;
+  --brand-ink: #e8eef2;
+
+  --release: #2e8b5e;
+  --release-bg: #e3f2ea;
+  --hold: #b4442b;
+  --hold-bg: #f8e5e0;
+  --review: #a8770f;
+  --review-bg: #f8efd9;
+  --approval: #3d6fb6;
+  --approval-bg: #e2ebf7;
+  --idle: #8b98a1;
+  --idle-bg: #eceff1;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --focus: 0 0 0 3px rgba(61, 111, 182, 0.35);
+
+  --font: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Type scale: 1.25 ratio */
+  --t-xs: 0.8rem;
+  --t-s: 0.875rem;
+  --t-m: 1rem;
+  --t-l: 1.25rem;
+  --t-xl: 1.563rem;
+  --t-2xl: 1.953rem;
+
+  color-scheme: light;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--approval);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
