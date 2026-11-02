@@ -145,6 +145,7 @@ export interface CoaResult {
   unit: string | null
   method: string | null
   confidence: number
+  needs_check: boolean
   matched_parameter_id: number | null
 }
 
@@ -160,6 +161,9 @@ export interface Coa {
   uploaded_by: string | null
   extraction_status: 'pending' | 'done' | 'failed'
   extraction_model: string | null
+  extraction_error: string | null
+  warnings: string[]
+  checked_by: string | null
   product_name: string | null
   cas_number: string | null
   batch_number: string | null
@@ -168,6 +172,14 @@ export interface Coa {
   test_date: string | null
   expiry_date: string | null
   results: CoaResult[]
+}
+
+/** Progress of a COA being read, streamed from the upload or from /coas/{id}/events. */
+export interface CoaEvent {
+  stage: 'received' | 'queued' | 'reading' | 'done' | 'failed' | 'manual' | 'waiting'
+  message?: string
+  coa_id?: number
+  batch?: BatchDetail
 }
 
 export type ParamStatus = 'pass' | 'fail' | 'unclear' | 'missing'

@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api } from '@/api/client'
-import type { BatchDetail, CatalogOptions } from '@/types'
+import type { BatchDetail, CatalogOptions, CoaEvent } from '@/types'
 
 const router = useRouter()
 const options = ref<CatalogOptions | null>(null)
@@ -55,7 +55,10 @@ async function save() {
       const data = new FormData()
       data.append('source', 'factory')
       data.append('file', file.value)
-      await api.postMultipart(`/batches/${batch.id}/coas`, data)
+      // Stop once it is received; the batch page follows the reading from there.
+      await api.stream<CoaEvent>(`/batches/${batch.id}/coas`, { method: 'POST', body: data }, (e) =>
+        e.stage === 'received',
+      )
     }
     await router.push(`/batches/${batch.id}`)
   } catch (e) {

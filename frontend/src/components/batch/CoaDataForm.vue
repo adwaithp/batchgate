@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { api } from '@/api/client'
 import type { BatchDetail, Coa, Spec } from '@/types'
@@ -14,7 +14,18 @@ interface Row {
   name_as_written: string
   raw_value: string
   unit: string
+  confidence: number // as read by Claude; 1 for anything a person typed
+  needsCheck: boolean // Claude wasn't sure: a person should compare it with the document
+  checked: boolean // ticked "Matches the document"
+  original: string // the row as loaded, to tell whether a person edited it
 }
+
+const snapshot = (r: { name_as_written: string; raw_value: string; unit: string | null }) =>
+  [r.name_as_written, r.raw_value, r.unit ?? ''].join('\u0000')
+const edited = (r: Row) => snapshot(r) !== r.original
+const doubtful = (r: Row) => r.needsCheck && !r.checked && !edited(r)
+
+const readByClaude = computed(() => !!props.coa.extraction_model && props.coa.extraction_model !== 'manual')
 
 const header = ref({
   product_name: props.coa.product_name ?? props.spec?.product ?? '',
@@ -31,14 +42,18 @@ const used = new Set<number>()
 const specRows: Row[] = (props.spec?.parameters ?? []).map((p) => {
   const existing = props.coa.results.find((r) => r.matched_parameter_id === p.id)
   if (existing) used.add(existing.id)
-  return {
+  const row = {
     parameter_id: p.id,
     label: p.name,
     hint: p.spec_text,
     name_as_written: existing?.name_as_written ?? p.name,
     raw_value: existing?.raw_value ?? '',
     unit: existing?.unit ?? p.unit ?? '',
+    confidence: existing?.confidence ?? 1,
+    needsCheck: existing?.needs_check ?? false,
+    checked: false,
   }
+  return { ...row, original: snapshot(row) }
 })
 // Anything else printed on the COA that the spec doesn't ask for.
 const extraRows: Row[] = props.coa.results
@@ -50,6 +65,10 @@ const extraRows: Row[] = props.coa.results
     name_as_written: r.name_as_written,
     raw_value: r.raw_value,
     unit: r.unit ?? '',
+    confidence: r.confidence,
+    needsCheck: r.needs_check,
+    checked: false,
+    original: snapshot(r),
   }))
 
 const rows = ref<Row[]>(specRows)
@@ -58,7 +77,18 @@ const saving = ref(false)
 const error = ref<string | null>(null)
 
 function addExtra() {
-  extras.value.push({ parameter_id: null, label: '', hint: '', name_as_written: '', raw_value: '', unit: '' })
+  extras.value.push({
+    parameter_id: null,
+    label: '',
+    hint: '',
+    name_as_written: '',
+    raw_value: '',
+    unit: '',
+    confidence: 1,
+    needsCheck: false,
+    checked: false,
+    original: '',
+  })
 }
 
 const blank = (s: string) => (s.trim() ? s.trim() : null)
@@ -73,6 +103,8 @@ async function save() {
         name_as_written: r.name_as_written.trim(),
         raw_value: r.raw_value.trim(),
         unit: blank(r.unit),
+        // A row a person edited or ticked is vouched for; untouched doubtful rows stay in review.
+        confidence: r.checked || edited(r) ? 1 : r.confidence,
         parameter_id: r.parameter_id,
       }))
     const h = header.value
@@ -97,10 +129,22 @@ async function save() {
 
 <template>
   <form class="entry" @submit.prevent="save">
-    <p class="lead">
+    <p v-if="readByClaude" class="lead">
+      Claude read these values from the document. Compare them with the COA before saving,
+      especially rows marked “Check this”: fix anything that’s wrong, or tick “Matches the
+      document”. Rows left unchecked keep the batch in review.
+    </p>
+    <p v-else class="lead">
       Type the values exactly as printed on the COA, including signs like “&lt; 0.01” or words like
       “Complies”. BatchGate converts units and compares against the spec.
     </p>
+
+    <div v-if="coa.warnings.length" class="warnings">
+      <p>Claude noted:</p>
+      <ul>
+        <li v-for="w in coa.warnings" :key="w">{{ w }}</li>
+      </ul>
+    </div>
 
     <fieldset class="header">
       <legend>As printed on the COA</legend>
@@ -123,17 +167,27 @@ async function save() {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="r in rows" :key="`p${r.parameter_id}`">
+        <tr v-for="r in rows" :key="`p${r.parameter_id}`" :class="{ doubt: doubtful(r) }">
           <th scope="row">
             {{ r.label }}
             <span class="hint">{{ r.hint }}</span>
+            <label v-if="r.needsCheck" class="check">
+              <input v-model="r.checked" type="checkbox" />
+              {{ doubtful(r) ? `Check this: Claude wasn’t sure (${Math.round(r.confidence * 100)}%)` : 'Matches the document' }}
+            </label>
           </th>
           <td><input v-model="r.name_as_written" :aria-label="`${r.label}: name on COA`" /></td>
           <td><input v-model="r.raw_value" class="value" :aria-label="`${r.label}: result`" /></td>
           <td><input v-model="r.unit" class="unit" :aria-label="`${r.label}: unit`" /></td>
         </tr>
-        <tr v-for="(r, i) in extras" :key="`x${i}`">
-          <th scope="row"><span class="hint">Not in spec</span></th>
+        <tr v-for="(r, i) in extras" :key="`x${i}`" :class="{ doubt: doubtful(r) }">
+          <th scope="row">
+            <span class="hint">Not in spec</span>
+            <label v-if="r.needsCheck" class="check">
+              <input v-model="r.checked" type="checkbox" />
+              {{ doubtful(r) ? `Check this: Claude wasn’t sure (${Math.round(r.confidence * 100)}%)` : 'Matches the document' }}
+            </label>
+          </th>
           <td><input v-model="r.name_as_written" aria-label="Other result: name" placeholder="Test name" /></td>
           <td><input v-model="r.raw_value" class="value" aria-label="Other result: value" /></td>
           <td><input v-model="r.unit" class="unit" aria-label="Other result: unit" /></td>
@@ -223,6 +277,36 @@ td {
 tbody th {
   font-weight: 500;
   width: 30%;
+}
+
+tr.doubt {
+  background: var(--review-bg);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--review);
+}
+
+.check input {
+  width: auto;
+}
+
+.warnings {
+  font-size: var(--t-s);
+  background: var(--review-bg);
+  border-radius: var(--radius-s);
+  padding: 0.6rem 0.8rem;
+}
+
+.warnings ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
 }
 
 .hint {

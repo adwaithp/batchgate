@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { api } from '@/api/client'
 import CoaDataForm from '@/components/batch/CoaDataForm.vue'
 import { formatDateTime, SOURCE } from '@/labels'
 import { useAuthStore } from '@/stores/auth'
-import type { BatchDetail, Coa, CoaSource, Spec, SupplierRef } from '@/types'
+import type { BatchDetail, Coa, CoaEvent, CoaSource, Spec, SupplierRef } from '@/types'
 
 const props = defineProps<{
   source: CoaSource
@@ -37,6 +37,44 @@ watch(
 const needsValues = computed(() => props.coa && props.coa.extraction_status !== 'done')
 const showUpload = computed(() => canEdit.value && (!props.coa || replacing.value))
 
+const valuesFrom = computed(() => {
+  const coa = props.coa
+  if (!coa || coa.extraction_model === 'manual') return 'Typed in by a person'
+  const read = `Read by Claude (${coa.extraction_model})`
+  return coa.checked_by ? `${read}, checked by ${coa.checked_by}` : read
+})
+
+// While Claude reads the COA, the server streams progress; `progress` is its latest message.
+const progress = ref<string | null>(null)
+let following: AbortController | null = null
+
+async function follow(path: string, init: RequestInit = {}): Promise<CoaEvent | null> {
+  following?.abort()
+  const ctrl = new AbortController()
+  following = ctrl
+  let last: CoaEvent | null = null
+  try {
+    await api.stream<CoaEvent>(path, { ...init, signal: ctrl.signal }, (e) => {
+      last = e
+      if (e.batch) emit('updated', e.batch)
+      if (e.message) progress.value = e.message
+    })
+  } catch (e) {
+    if (last === null) throw e // the request itself failed, e.g. a duplicate file
+    // Otherwise the stream broke off (or the page closed it); the caller reloads the batch.
+  } finally {
+    if (following === ctrl) {
+      following = null
+      progress.value = null
+    }
+  }
+  return last
+}
+
+async function reload() {
+  emit('updated', await api.get<BatchDetail>(`/batches/${props.batchId}`))
+}
+
 async function upload(withFile: boolean) {
   error.value = null
   uploading.value = true
@@ -45,17 +83,35 @@ async function upload(withFile: boolean) {
     data.append('source', props.source)
     if (props.source === 'lab' && labId.value) data.append('issuer_id', String(labId.value))
     if (withFile && file.value) data.append('file', file.value)
-    const detail = await api.postMultipart<BatchDetail>(`/batches/${props.batchId}/coas`, data)
+    progress.value = 'Uploading…'
+    const last = await follow(`/batches/${props.batchId}/coas`, { method: 'POST', body: data })
     replacing.value = false
     file.value = null
-    emit('updated', detail)
-    editing.value = true // values next
+    await reload()
+    editing.value = last?.stage !== 'done' // Claude filled the values in, or a person types them
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Upload failed.'
   } finally {
     uploading.value = false
   }
 }
+
+// After a page reload (or an upload from the register-batch form), pick the reading up again.
+watch(
+  () => props.coa?.id,
+  async () => {
+    const coa = props.coa
+    if (!coa || !coa.has_file || coa.extraction_status !== 'pending' || uploading.value) return
+    try {
+      await follow(`/coas/${coa.id}/events`)
+      await reload()
+    } catch {
+      /* could not reach the server: the card keeps showing the saved state */
+    }
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => following?.abort())
 
 async function openFile() {
   if (!props.coa) return
@@ -77,6 +133,8 @@ function onSaved(detail: BatchDetail) {
     <header>
       <h3>{{ SOURCE[source] }}</h3>
       <span v-if="coa && !needsValues" class="state ok">Values in</span>
+      <span v-else-if="progress" class="state wait">Reading…</span>
+      <span v-else-if="coa?.extraction_status === 'failed'" class="state wait">Not read automatically</span>
       <span v-else-if="needsValues" class="state wait">Values not entered</span>
       <span v-else class="state none">Not received</span>
     </header>
@@ -99,12 +157,16 @@ function onSaved(detail: BatchDetail) {
       </div>
       <div v-if="coa.extraction_status === 'done'">
         <dt>Values from</dt>
-        <dd>{{ coa.extraction_model === 'manual' ? 'Typed in by a person' : coa.extraction_model }}</dd>
+        <dd>{{ valuesFrom }}</dd>
       </div>
     </dl>
+    <p v-if="progress" class="progress" role="status">{{ progress }}</p>
+    <p v-else-if="coa?.extraction_status === 'failed'" class="notice" role="status">
+      {{ coa.extraction_error }} Enter the values by hand.
+    </p>
     <p v-else-if="!canEdit" class="muted">Not received yet.</p>
 
-    <div v-if="canEdit && coa && !editing && !replacing" class="row-actions">
+    <div v-if="canEdit && coa && !editing && !replacing && !progress" class="row-actions">
       <button type="button" :class="needsValues ? 'primary' : 'secondary'" @click="editing = true">
         {{ needsValues ? 'Enter values' : 'Edit values' }}
       </button>
@@ -124,7 +186,7 @@ function onSaved(detail: BatchDetail) {
       </label>
       <div class="row-actions">
         <button type="button" class="primary" :disabled="!file || uploading" @click="upload(true)">
-          {{ uploading ? 'Uploading…' : 'Upload COA' }}
+          {{ uploading ? 'Uploading…' : 'Upload and read COA' }}
         </button>
         <button type="button" class="link" :disabled="uploading" @click="upload(false)">
           No file? Type the values in instead
@@ -269,6 +331,46 @@ input[type='file'] {
   font-size: var(--t-s);
   cursor: pointer;
   text-align: left;
+}
+
+.progress,
+.notice {
+  font-size: var(--t-s);
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-s);
+}
+
+.progress {
+  background: var(--approval-bg);
+  color: var(--approval);
+}
+
+.progress::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress::before {
+    animation: none;
+  }
+}
+
+.notice {
+  background: var(--review-bg);
+  color: var(--ink);
 }
 
 .muted {
