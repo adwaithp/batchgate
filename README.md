@@ -1,104 +1,92 @@
 # BatchGate
 
-An AI quality gate for specialty chemical batches.
+**An AI quality gate for specialty chemical batches.**
 
-A partner factory makes a batch, the factory and an independent lab each send a certificate of analysis (COA), and someone has to check every number against what the customer ordered before the batch ships. BatchGate reads those COAs, checks them against the customer's spec, and decides: **release**, **hold**, or **ask a human**.
+A partner factory makes a batch. The factory and an independent lab each send a certificate of
+analysis (COA): a PDF, a scan, sometimes a phone photo. Before the batch ships, every number on
+both must be checked against the spec the customer agreed. BatchGate does that check: Claude reads
+the COAs, plain tested code compares them with the spec, and every batch comes out as **release**,
+**hold** or **needs a person**, with the reasons spelled out.
 
-> Status: the release engine and the batch workflow work end to end. Claude reads uploaded COA PDFs and scans in the background and fills the values in; a person checks anything it wasn't sure about. Next: evals on a set of synthetic COAs.
+When a batch needs a person, a review copilot explains why and what to do next, citing the
+customer's quality agreement, the SOPs and how similar problems were resolved before.
 
-## How it is built
+The design rule everywhere: **AI reads, code decides.** Claude turns documents into values and
+explains things to people. Whether a batch can ship is decided by a rules engine with no AI in it,
+and when anything is uncertain the answer is "a person looks", never "release".
 
-| Part | Stack |
-| --- | --- |
-| API | FastAPI, SQLAlchemy 2, Pydantic, JWT auth |
-| Web app | Vue 3, TypeScript, Vite, Pinia |
-| Storage | SQLite (zero setup) |
-| COA reading | Claude (vision, structured output) in an arq worker; progress streamed to the browser (SSE via Redis pub/sub) |
+## Features
 
-The rule the whole design follows: **AI reads, code decides.** The model turns messy PDFs into structured data; comparing values against limits and making the release decision is plain, tested code.
+- **COA reading** with Claude vision and structured output, a confidence per value, and a code
+  check of every value against the PDF's own text layer.
+- **Rules engine** comparing the spec with the factory and lab COAs: limits, units, factory-vs-lab
+  agreement, CAS number, product grade, issuer, batch number and dates.
+- **Workflow with four-eyes approval**: analysts propose, a different QC manager approves; every
+  change lands in an append-only audit log.
+- **Orders, versioned specs and customers**: each order line is checked against the spec version
+  agreed when the order was placed.
+- **Review copilot**: a tool-using agent with read-only tools that cites its sources, with
+  citations verified in code.
+- **Knowledge base and case memory**: quality agreements, SOPs and method notes split into
+  clauses, plus every batch a person resolved, searchable with BM25 scoped to customer and product.
+- **MCP server** so QC staff can query BatchGate from Claude Desktop or Claude Code.
+- **Evals** for COA reading, planted misreads, retrieval and copilot citations.
 
-## What happens to a batch
+## Results
 
-```
-COA arrives (upload today; email or ERP later)
-      ↓
-ingest_coa()            one entry point for every source
-      ↓
-values in               read by Claude in a background worker (or typed by a person)
-      ↓
-rules engine            spec vs factory COA vs lab COA → release / hold / review, with reasons
-      ↓
-people decide           analyst proposes, a different QC manager approves (four eyes)
-      ↓
-order line ready        released quantity rolls up to the customer's order
-```
+| Eval | Result |
+|---|---|
+| COAs read (9 fictional test COAs) | 9 / 9 correct decisions, **0 false releases**, 100 % of values read correctly |
+| Planted confident misreads on text PDFs | 2 false releases without the PDF text check, **0 with it** |
+| Knowledge search, 23 QC questions | right passage in the top 5 for **100 %**, first for 74 % |
+| Copilot citations | expected sources cited in 2 / 2 briefs, 14 / 15 citations judged faithful |
 
-The engine (`backend/app/services/rules/`) is plain Python with no database and no AI, so it is fast to test:
+Two real supplier COAs, scored locally and not published, were also held correctly.
+Details and how to re-run them: [docs/evals.md](docs/evals.md).
 
-- **Hold** when a critical parameter is out of spec, the CAS number is wrong, or the batch has expired.
-- **Review** when anything is uncertain: a missing or unreadable value, a unit that can't be converted (% w/v vs % w/w), a "< 20" reading against a limit of 10, a low-confidence read, factory and lab disagreeing beyond tolerance, a batch number that doesn't match, or a COA still to come.
-- **Release** only when everything passed and nothing is uncertain. A QC manager still approves.
+## Quick start
 
-Units are converted in code (ppm ↔ %, mg/kg ↔ ppm), never by the model. Each parameter can set how far factory and lab may differ; the default is 2 % relative.
-
-A batch that arrives without an order line is checked against every open line for that product, and BatchGate suggests the one it fits. A person confirms, because shipping the wrong grade is worse than waiting.
-
-## Roles
-
-Each role sees a different app. Routes check permissions, not role names, so the mapping lives in one file (`backend/app/core/permissions.py`).
-
-| Role | Can |
-| --- | --- |
-| QC Analyst | Upload COAs, run checks, propose a release, put a batch on hold |
-| QC Manager | Everything an analyst can, plus approve releases (second pair of eyes), edit specs, read the audit log |
-| Sales | Read-only view of their own customers' orders |
-| Admin | Everything |
-
-## Run it locally
-
-You need [uv](https://docs.astral.sh/uv/), Node 20+ and Redis (`brew install redis && brew services start redis`). COA reading needs an Anthropic API key in `backend/.env` (see `backend/.env.example`); without one, values are typed in by hand.
+Requirements: Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20+, PostgreSQL 16, and
+optionally Redis and an Anthropic API key.
 
 ```bash
-# API  → http://localhost:8000/docs
+# Database
+createuser --pwprompt batchgate
+createdb --owner batchgate batchgate
+
+# API → http://localhost:8000/docs
 cd backend
+cp .env.example .env            # database settings, ANTHROPIC_API_KEY
 uv sync
-uv run python -m app.seed        # demo users, customers, specs, orders
+uv run python -m app.seed       # applies migrations and adds demo data
 uv run uvicorn app.main:app --reload
 
-# COA reader → reads uploaded COAs with Claude   (in a second terminal)
-cd backend
-uv run arq app.worker.WorkerSettings
-
-# Web app → http://localhost:5173   (in a third terminal)
+# Web app → http://localhost:5173
 cd frontend
 npm install
 npm run dev
 ```
 
-Sign in with one click as any demo account on the login page. All demo passwords are `demo1234`.
+Sign in with one click as any demo account (password `demo1234`). Without an API key, COA values
+are typed in by hand and the copilot is off. With Redis running, start the COA reader with
+`uv run arq app.worker.WorkerSettings`; without it, the API reads COAs inside the upload request.
 
-After pulling changes that touch the data model, rebuild the demo data:
+## Documentation
 
-```bash
-cd backend && uv run python -m app.seed --reset
-```
+| Guide | Contents |
+|---|---|
+| [Architecture](docs/architecture.md) | Components, data model, request flows, project layout |
+| [Workflow and roles](docs/workflow.md) | Batch lifecycle, decisions, roles and permissions, orders, specs and customers |
+| [Rules engine](docs/rules-engine.md) | The release policy and every check it runs |
+| [AI features](docs/ai-features.md) | COA reading, the text check, the review copilot, the knowledge base, the MCP server |
+| [Evals](docs/evals.md) | What is measured, current results and how to re-run |
+| [API](docs/api.md) | Authentication, endpoints and the COA reading event stream |
+| [Development](docs/development.md) | Setup, configuration, migrations, tests, linting and conventions |
+| [Deploying on AWS EC2](docs/deploy-ec2.md) | Five-service docker compose deployment |
 
-Run the tests:
+## Tech stack
 
-```bash
-cd backend && uv run pytest
-```
+Python 3.12, FastAPI, SQLAlchemy 2, Pydantic v2, Alembic, PostgreSQL, Redis and arq; Vue 3,
+TypeScript and Pinia; the Anthropic SDK (vision, structured output, tool use) and the MCP SDK.
 
-## Demo data
-
-All companies are fictional and all spec limits are illustrative. The seed creates five batches through the real workflow, so the engine decides each one:
-
-| Batch | What the engine found |
-| --- | --- |
-| FC-2611-07 | **Hold.** The lab measured insoluble matter at 0.14 % against a max of 0.1 %. |
-| FC-2611-12 | Registered, waiting for its COAs. |
-| MT-2610-31 | **Release.** Clean on both COAs, waiting for a QC manager. |
-| MT-2611-04 | No order line. It fits the 40 % grade on PO-1042 line 3 and fails the 78 % grade on line 2. |
-| PO-2611-A | **Review.** Both COAs pass, but factory and lab disagree on assay by more than the 1 % allowed. |
-
-PO-1042 is deliberately awkward: MEA Triazine appears on two lines at two different grades, so a batch must be checked against the spec of *its* line, not just its product name.
+All companies, specs and documents in the demo data are fictional.
