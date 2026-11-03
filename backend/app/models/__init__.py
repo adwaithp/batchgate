@@ -1,5 +1,6 @@
 from app.models.accounts import User, user_customers
 from app.models.catalog import Customer, Product, Spec, SpecParameter, Supplier
+from app.models.knowledge import KnowledgeDocument, KnowledgePassage, QCCase
 from app.models.operations import (
     AuditLog,
     Batch,
@@ -18,9 +19,12 @@ __all__ = [
     "COADocument",
     "COAResult",
     "Customer",
+    "KnowledgeDocument",
+    "KnowledgePassage",
     "Order",
     "OrderLine",
     "Product",
+    "QCCase",
     "Spec",
     "SpecParameter",
     "Supplier",

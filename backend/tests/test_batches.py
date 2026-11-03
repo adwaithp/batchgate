@@ -1,3 +1,5 @@
+"""Batch workflow: registration, COA upload and entry, checks and decisions."""
+
 import json
 
 import pytest
@@ -13,25 +15,29 @@ PDF = b"%PDF-1.4\n% demo coa\n"
 
 @pytest.fixture(autouse=True)
 def tmp_uploads(tmp_path, monkeypatch):
+    """Store uploads in a temporary folder."""
     monkeypatch.setattr(get_settings(), "upload_dir", str(tmp_path / "uploads"))
 
 
 def find(client, headers, batch_number):
+    """Return a batch from the list by number."""
     batches = client.get("/api/batches", headers=headers).json()
     return next(b for b in batches if b["batch_number"] == batch_number)
 
 
 def detail(client, headers, batch_number):
+    """Return a batch's full view by number."""
     b = find(client, headers, batch_number)
     return client.get(f"/api/batches/{b['id']}", headers=headers).json()
 
 
 def sse(res) -> list[dict]:
-    """The events of a server-sent event stream, in order."""
+    """Return the events of a server-sent event stream, in order."""
     return [json.loads(line[6:]) for line in res.text.splitlines() if line.startswith("data: ")]
 
 
 def act(client, headers, batch_id, action, **body):
+    """Post a decision on a batch."""
     return client.post(
         f"/api/batches/{batch_id}/actions", headers=headers, json={"action": action, **body}
     )
@@ -66,7 +72,7 @@ def test_held_batch_explains_itself(client, login):
     assert d["verdict"]["decision"] == "hold"
     assert "Insoluble matter: 0.14 % is above max 0.1 %" in d["verdict"]["summary"]
     assert d["line"]["po_number"] == "PO-1042"
-    assert set(d["allowed_actions"]) == {"propose_release", "assign_line", "rerun_check"}
+    assert set(d["allowed_actions"]) == {"propose_release", "assign_line", "rerun_check", "cancel"}
 
 
 def test_engine_release_is_approved_by_manager_and_rolls_up_to_order(client, login):
@@ -142,6 +148,7 @@ def test_assigning_a_line_for_another_product_fails(client, login):
 
 
 def _options(client, h):
+    """Return the batch form options."""
     return client.get("/api/catalog/options", headers=h).json()
 
 
@@ -314,3 +321,183 @@ def test_unchanged_recheck_does_not_add_history(client, login):
     after = act(client, h, d["id"], "rerun_check").json()
     assert len(after["history"]) == before
     assert after["status"] == "on_hold"
+
+
+def test_seeded_coas_name_their_issuer(client, login):
+    d = detail(client, login(ANALYST), "MT-2610-31")
+    issuers = {
+        c["source"]: c for c in d["verdict"]["details"]["identity"] if c["code"] == "issuer"
+    }
+    assert issuers["factory"]["message"] == "Issued by Dahej Specialty Organics."
+    assert issuers["lab"]["message"] == "Issued by Northbridge Analytical Labs."
+
+
+def test_anhydrous_coa_on_a_solution_order_line_is_held(client, login):
+    """An anhydrous 98% COA on a 40% solution line is held."""
+    h = login(ANALYST)
+    opts = _options(client, h)
+    ferric = next(p for p in opts["products"] if p["name"] == "Ferric Chloride")
+    line = next(ln for ln in opts["open_lines"] if ln["product_id"] == ferric["id"])
+    batch = client.post(
+        "/api/batches",
+        headers=h,
+        json={
+            "batch_number": "FC-2611-21",
+            "product_id": ferric["id"],
+            "factory_id": opts["factories"][0]["id"],
+            "line_id": line["id"],
+        },
+    ).json()
+    up = client.post(
+        f"/api/batches/{batch['id']}/coas",
+        headers=h,
+        data={"source": "factory"},
+        files={"file": ("coa.pdf", PDF, "application/pdf")},
+    )
+    received, _ = sse(up)
+    coa = received["batch"]["coas"][0]
+    params = {p["name"]: p for p in received["batch"]["line_detail"]["spec"]["parameters"]}
+
+    saved = client.put(
+        f"/api/coas/{coa['id']}/data",
+        headers=h,
+        json={
+            "product_name": "Iron (III) chloride, anhydrous, 98%",
+            "batch_number": "FC-2611-21",
+            "results": [
+                {
+                    "name_as_written": "Ferric chloride",
+                    "raw_value": "99.6",
+                    "unit": "%",
+                    "parameter_id": params["Ferric chloride (FeCl3)"]["id"],
+                },
+                {"name_as_written": "Insolubles", "raw_value": "0.100", "unit": "%"},
+            ],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["status"] == "on_hold"
+    grade = next(c for c in body["verdict"]["details"]["identity"] if c["code"] == "grade")
+    assert grade["status"] == "fail"
+    assert "40% solution" in grade["message"]
+
+
+def _register_anhydrous(client, h):
+    """Register FC-2611-21 on a 40% solution line with an anhydrous COA."""
+    opts = _options(client, h)
+    ferric = next(p for p in opts["products"] if p["name"] == "Ferric Chloride")
+    line = next(ln for ln in opts["open_lines"] if ln["product_id"] == ferric["id"])
+    batch = client.post(
+        "/api/batches",
+        headers=h,
+        json={
+            "batch_number": "FC-2611-21",
+            "product_id": ferric["id"],
+            "factory_id": opts["factories"][0]["id"],
+            "line_id": line["id"],
+        },
+    ).json()
+    up = client.post(
+        f"/api/batches/{batch['id']}/coas",
+        headers=h,
+        data={"source": "factory"},
+        files={"file": ("coa.pdf", PDF, "application/pdf")},
+    )
+    received, _ = sse(up)
+    coa = received["batch"]["coas"][0]
+    saved = client.put(
+        f"/api/coas/{coa['id']}/data",
+        headers=h,
+        json={
+            "product_name": "Iron (III) chloride, anhydrous, 98%",
+            "batch_number": "FC-2611-21",
+            "results": [
+                {"name_as_written": "Ferric chloride", "raw_value": "99.6", "unit": "%"},
+                {"name_as_written": "Insolubles", "raw_value": "0.08", "unit": "%"},
+            ],
+        },
+    ).json()
+    assert saved["status"] == "on_hold"
+    return saved
+
+
+def _anhydrous_order(client):
+    """Add the anhydrous grade spec and an order for it."""
+    m = login_as(client, "meera@batchgate.dev")
+    ref = client.get("/api/reference", headers=m).json()
+    customer = next(c["id"] for c in ref["customers"] if c["name"] == "Ridgeway Industrial Supply")
+    product = next(p["id"] for p in ref["products"] if p["name"] == "Ferric Chloride")
+    spec = client.post(
+        "/api/specs",
+        headers=m,
+        json={
+            "customer_id": customer,
+            "product_id": product,
+            "grade": "Anhydrous 98%",
+            "parameters": [
+                {"name": "Assay (as FeCl3)", "rule_type": "min", "low": 98, "unit": "%",
+                 "aliases": ["Ferric chloride"]},
+                {"name": "Insolubles", "rule_type": "max", "high": 0.1, "unit": "%"},
+            ],
+        },
+    ).json()  # fmt: skip
+    order = client.post(
+        "/api/orders",
+        headers=m,
+        json={
+            "po_number": "PO-1090",
+            "customer_id": customer,
+            "order_date": "2026-11-03",
+            "lines": [{"spec_id": spec["id"], "quantity": 0.5}],
+        },
+    ).json()
+    return order["lines"][0]["id"]
+
+
+def login_as(client, email):
+    """Sign in as a demo user and return auth headers."""
+    res = client.post("/api/auth/token", data={"username": email, "password": "demo1234"})
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+def test_moving_a_batch_to_the_right_line_rechecks_it_against_that_spec(client, login):
+    h = login(ANALYST)
+    held = _register_anhydrous(client, h)
+    right_line = _anhydrous_order(client)
+
+    res = act(client, h, held["id"], "assign_line", line_id=right_line)
+    assert res.status_code == 200, res.text
+    moved = res.json()
+    assert moved["line"]["po_number"] == "PO-1090"
+    grade = next(c for c in moved["verdict"]["details"]["identity"] if c["code"] == "grade")
+    assert grade["status"] == "pass"
+    params = {p["name"]: p["status"] for p in moved["verdict"]["details"]["parameters"]}
+    assert params == {"Assay (as FeCl3)": "pass", "Insolubles": "pass"}
+    assert moved["status"] == "pending_review"  # only the lab COA is still missing
+
+    again = act(client, h, held["id"], "assign_line", line_id=right_line)
+    assert again.status_code == 422
+
+
+def test_cancelling_a_duplicate_batch(client, login):
+    h = login(ANALYST)
+    b = find(client, h, "FC-2611-12")
+    assert act(client, h, b["id"], "cancel").status_code == 422  # a note is required
+
+    res = act(client, h, b["id"], "cancel", note="Registered twice by mistake.")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] == "cancelled"
+    assert body["allowed_actions"] == []
+    assert body["actions"][-1]["action"] == "cancel"
+    assert act(client, h, b["id"], "rerun_check").status_code == 409
+
+    dash = client.get("/api/dashboard", headers=h).json()
+    line1 = next(o for o in dash["recent_orders"] if o["po_number"] == "PO-1042")["lines"][0]
+    assert line1["batches"] == 1  # the cancelled batch no longer counts
+
+
+def test_sales_cannot_cancel_batches(client, login):
+    b = find(client, login(ANALYST), "FC-2611-12")
+    assert act(client, login(SALES), b["id"], "cancel", note="x").status_code in (403, 404)

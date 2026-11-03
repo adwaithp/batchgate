@@ -1,8 +1,7 @@
-"""Orders, batches, COA documents, verdicts and the human decisions taken on them.
+"""Orders, batches, COAs, verdicts and decisions.
 
-Customer ─< Order ─< OrderLine (product + spec) ─< Batch ─< COADocument ─< COAResult
-                                                        └─< Verdict (engine)
-                                                        └─< BatchAction (humans)
+Order -< OrderLine -< Batch -< COADocument -< COAResult
+                      Batch -< Verdict (engine) and BatchAction (people)
 """
 
 from datetime import date, datetime
@@ -24,6 +23,8 @@ from app.models.mixins import TimestampMixin, str_enum, utcnow
 
 
 class Order(TimestampMixin, Base):
+    """A customer purchase order."""
+
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -42,7 +43,7 @@ class Order(TimestampMixin, Base):
 
 
 class OrderLine(Base):
-    """One product on a PO. The same product can appear on several lines (e.g. two grades)."""
+    """One product grade and quantity on an order, tied to a spec version."""
 
     __tablename__ = "order_lines"
     __table_args__ = (UniqueConstraint("order_id", "line_no"),)
@@ -62,12 +63,14 @@ class OrderLine(Base):
 
 
 class Batch(TimestampMixin, Base):
+    """A production batch from a partner factory."""
+
     __tablename__ = "batches"
     __table_args__ = (UniqueConstraint("factory_id", "batch_number"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     batch_number: Mapped[str] = mapped_column(String(64), index=True)
-    # Nullable: a COA can arrive before anyone knows which order line it belongs to.
+    # Unknown until a person assigns the batch to an order line.
     line_id: Mapped[int | None] = mapped_column(ForeignKey("order_lines.id"), index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     factory_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"))
@@ -95,7 +98,7 @@ class Batch(TimestampMixin, Base):
 
 
 class COADocument(Base):
-    """An uploaded certificate of analysis, from the factory or the independent lab."""
+    """A certificate of analysis from the factory or the independent lab."""
 
     __tablename__ = "coa_documents"
 
@@ -104,9 +107,9 @@ class COADocument(Base):
     source: Mapped[CoaSource] = mapped_column(str_enum(CoaSource))
     issuer_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"))
 
-    # How it arrived: "upload", "manual" (typed in, no file), later "email" or "api".
+    # upload, manual or (later) email/api
     origin: Mapped[str] = mapped_column(String(16), default="upload")
-    # A newer COA of the same source replaces this one; old ones are kept for the record.
+    # Set when a newer COA from the same source replaces this one.
     superseded: Mapped[bool] = mapped_column(default=False)
 
     original_filename: Mapped[str | None] = mapped_column(String(255))
@@ -116,16 +119,16 @@ class COADocument(Base):
     uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    # Header fields as printed on the document (read by the model, or typed in by a person).
-    # PENDING = file uploaded, values not in yet; DONE = values available for the check.
+    # Header fields as printed on the document.
     extraction_status: Mapped[ExtractionStatus] = mapped_column(
         str_enum(ExtractionStatus), default=ExtractionStatus.PENDING
     )
     extraction_error: Mapped[str | None] = mapped_column(Text)
     extraction_model: Mapped[str | None] = mapped_column(String(64))
-    # A person who saved values over the model's reading (checked or corrected them).
+    # Person who checked or corrected the model's reading.
     checked_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     issuer_name: Mapped[str | None] = mapped_column(String(255))
+    issuer_confidence: Mapped[float] = mapped_column(Float, default=1.0)
     product_name: Mapped[str | None] = mapped_column(String(255))
     cas_number: Mapped[str | None] = mapped_column(String(32))
     batch_number: Mapped[str | None] = mapped_column(String(64))
@@ -133,6 +136,10 @@ class COADocument(Base):
     mfg_date: Mapped[date | None]
     test_date: Mapped[date | None]
     expiry_date: Mapped[date | None]
+    # Dates as printed when they are not a full, unambiguous date.
+    mfg_date_as_printed: Mapped[str | None] = mapped_column(String(64))
+    test_date_as_printed: Mapped[str | None] = mapped_column(String(64))
+    expiry_date_as_printed: Mapped[str | None] = mapped_column(String(64))
     raw_extraction: Mapped[dict | None] = mapped_column(JSON)
 
     batch: Mapped[Batch | None] = relationship(back_populates="coas")
@@ -143,7 +150,7 @@ class COADocument(Base):
 
 
 class COAResult(Base):
-    """One test result row as printed on a COA."""
+    """One result row as printed on a COA."""
 
     __tablename__ = "coa_results"
 
@@ -157,7 +164,7 @@ class COAResult(Base):
     unit: Mapped[str | None] = mapped_column(String(32))
     method: Mapped[str | None] = mapped_column(String(128))
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    # Filled by the matcher: which spec parameter this row is evidence for.
+    # Spec parameter this row was matched to.
     matched_parameter_id: Mapped[int | None] = mapped_column(ForeignKey("spec_parameters.id"))
 
     coa: Mapped[COADocument] = relationship(back_populates="results")
@@ -165,7 +172,7 @@ class COAResult(Base):
 
 
 class Verdict(TimestampMixin, Base):
-    """The engine's recommendation for a batch. Re-running a check adds a new verdict."""
+    """A rules-engine decision for a batch; each check adds one."""
 
     __tablename__ = "verdicts"
 
@@ -174,7 +181,7 @@ class Verdict(TimestampMixin, Base):
     spec_id: Mapped[int | None] = mapped_column(ForeignKey("specs.id"))
     decision: Mapped[Decision] = mapped_column(str_enum(Decision))
     summary: Mapped[str] = mapped_column(Text)
-    # Full per-parameter breakdown, identity checks and factory-vs-lab discrepancies.
+    # Per-parameter results, identity checks and discrepancies.
     details: Mapped[dict] = mapped_column(JSON)
     engine_version: Mapped[str] = mapped_column(String(32))
 
@@ -183,7 +190,7 @@ class Verdict(TimestampMixin, Base):
 
 
 class BatchAction(TimestampMixin, Base):
-    """A human decision on a batch: propose, approve, hold, reject, assign to a line."""
+    """A decision a person took on a batch."""
 
     __tablename__ = "batch_actions"
 
@@ -199,7 +206,7 @@ class BatchAction(TimestampMixin, Base):
 
 
 class AuditLog(TimestampMixin, Base):
-    """Append-only record of who did what, for every change that matters."""
+    """Append-only record of every change that matters."""
 
     __tablename__ = "audit_log"
 

@@ -11,8 +11,18 @@ const props = defineProps<{
 // The path a batch takes through the gate, in order.
 const stages: { key: BatchStatus; label: string; who: string; tone: string }[] = [
   { key: 'awaiting_coa', label: 'Awaiting COA', who: 'Factory and lab send reports', tone: 'idle' },
-  { key: 'pending_review', label: 'Needs review', who: 'QC analyst checks flagged items', tone: 'review' },
-  { key: 'pending_approval', label: 'Waiting approval', who: 'QC manager confirms release', tone: 'approval' },
+  {
+    key: 'pending_review',
+    label: 'Needs review',
+    who: 'QC analyst checks flagged items',
+    tone: 'review',
+  },
+  {
+    key: 'pending_approval',
+    label: 'Waiting approval',
+    who: 'QC manager confirms release',
+    tone: 'approval',
+  },
   { key: 'released', label: 'Released', who: 'Cleared to ship', tone: 'release' },
 ]
 

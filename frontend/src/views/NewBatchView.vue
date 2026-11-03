@@ -36,13 +36,19 @@ watch(
 )
 
 const canSave = computed(
-  () => form.value.batch_number.trim() && form.value.product_id && form.value.factory_id && !saving.value,
+  () =>
+    form.value.batch_number.trim() &&
+    form.value.product_id &&
+    form.value.factory_id &&
+    !saving.value,
 )
 
+/** Keep the chosen COA file. */
 function onFile(e: Event) {
   file.value = (e.target as HTMLInputElement).files?.[0] ?? null
 }
 
+/** Register the batch and upload its COA. */
 async function save() {
   error.value = null
   saving.value = true
@@ -55,9 +61,11 @@ async function save() {
       const data = new FormData()
       data.append('source', 'factory')
       data.append('file', file.value)
-      // Stop once it is received; the batch page follows the reading from there.
-      await api.stream<CoaEvent>(`/batches/${batch.id}/coas`, { method: 'POST', body: data }, (e) =>
-        e.stage === 'received',
+      // Stop once received; the batch page follows the reading.
+      await api.stream<CoaEvent>(
+        `/batches/${batch.id}/coas`,
+        { method: 'POST', body: data },
+        (e) => e.stage === 'received',
       )
     }
     await router.push(`/batches/${batch.id}`)
@@ -105,7 +113,13 @@ async function save() {
 
         <label>
           Quantity (t)
-          <input v-model.number="form.quantity" type="number" min="0" step="0.1" placeholder="e.g. 10" />
+          <input
+            v-model.number="form.quantity"
+            type="number"
+            min="0"
+            step="0.1"
+            placeholder="e.g. 10"
+          />
         </label>
 
         <label class="wide">
@@ -117,8 +131,8 @@ async function save() {
             </option>
           </select>
           <span class="hint">
-            The batch is checked against this line’s spec. If you leave it empty, BatchGate
-            suggests a line once the COA values are in.
+            The batch is checked against this line’s spec. If you leave it empty, BatchGate suggests
+            a line once the COA values are in.
           </span>
         </label>
 

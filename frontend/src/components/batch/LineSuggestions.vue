@@ -14,6 +14,7 @@ const auth = useAuthStore()
 const busy = ref<number | null>(null)
 const error = ref<string | null>(null)
 
+/** Assign the batch to an order line. */
 async function assign(lineId: number) {
   busy.value = lineId
   error.value = null
@@ -47,12 +48,18 @@ async function assign(lineId: number) {
     </p>
 
     <ol v-else class="list">
-      <li v-for="(s, i) in batch.suggestions" :key="s.line.id" :class="{ best: i === 0 && s.decision === 'release' }">
+      <li
+        v-for="(s, i) in batch.suggestions"
+        :key="s.line.id"
+        :class="{ best: i === 0 && s.decision === 'release' }"
+      >
         <div class="what">
           <strong>{{ s.line.po_number }}, line {{ s.line.line_no }}: {{ s.line.grade }}</strong>
           <span class="meta">{{ s.line.customer }} · {{ s.line.quantity }} {{ s.line.unit }}</span>
           <span v-if="s.failing.length" class="fails">Out of spec: {{ s.failing.join(', ') }}</span>
-          <span v-else-if="s.decision === 'release'" class="fits">Fits every parameter of this spec.</span>
+          <span v-else-if="s.decision === 'release'" class="fits"
+            >Fits every parameter of this spec.</span
+          >
           <span v-else class="meta">{{ s.summary }}</span>
         </div>
         <StatusBadge v-bind="DECISION[s.decision]" />

@@ -35,10 +35,12 @@ export const tokenStore = {
 
 /** Called when the API says the session is no longer valid. Set by the auth store. */
 let onUnauthorized: () => void = () => {}
+/** Register what to do when the session expires. */
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn
 }
 
+/** Send an authenticated request; throws ApiError on failure. */
 async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   const token = tokenStore.get()
@@ -66,10 +68,12 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   return res
 }
 
+/** Send a request and parse the JSON response. */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await send(path, init)).json() as Promise<T>
 }
 
+/** Request options for a JSON body. */
 const json = (method: string, body: unknown): RequestInit => ({
   method,
   headers: { 'Content-Type': 'application/json' },
@@ -80,6 +84,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) => request<T>(path, json('POST', body)),
   put: <T>(path: string, body: unknown) => request<T>(path, json('PUT', body)),
+  /** Multipart upload (files); the browser sets the boundary header. */
+  upload: <T>(path: string, data: FormData) => request<T>(path, { method: 'POST', body: data }),
   postForm: <T>(path: string, data: Record<string, string>) =>
     request<T>(path, { method: 'POST', body: new URLSearchParams(data) }),
   /**

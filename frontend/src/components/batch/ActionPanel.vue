@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 
 import { api } from '@/api/client'
 import { ACTION } from '@/labels'
-import type { BatchActionType, BatchDetail } from '@/types'
+import type { BatchActionType, BatchDetail, CatalogOptions, LineOption } from '@/types'
 
 const props = defineProps<{ batch: BatchDetail }>()
 const emit = defineEmits<{ updated: [BatchDetail] }>()
@@ -48,21 +48,25 @@ const note = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
 
+/** Select or deselect a decision. */
 function choose(a: Decidable) {
   chosen.value = chosen.value === a ? null : a
   note.value = ''
   error.value = null
 }
 
-async function submit(action: BatchActionType, withNote = true) {
+/** Apply the chosen decision or tool. */
+async function submit(action: BatchActionType, withNote = true, lineId: number | null = null) {
   busy.value = true
   error.value = null
   try {
     const detail = await api.post<BatchDetail>(`/batches/${props.batch.id}/actions`, {
       action,
       note: withNote ? note.value.trim() || null : null,
+      line_id: lineId,
     })
     chosen.value = null
+    tool.value = null
     note.value = ''
     emit('updated', detail)
   } catch (e) {
@@ -75,8 +79,38 @@ async function submit(action: BatchActionType, withNote = true) {
 const closedText = computed(() => {
   if (props.batch.status === 'released') return 'Released. This batch is cleared to ship.'
   if (props.batch.status === 'rejected') return 'Rejected. This batch is closed.'
+  if (props.batch.status === 'cancelled')
+    return 'Cancelled. It was entered by mistake and is kept for the record.'
   return null
 })
+
+// Housekeeping actions, separate from the quality decisions.
+const tool = ref<'line' | 'cancel' | null>(null)
+const lines = ref<LineOption[] | null>(null)
+const newLine = ref<number | null>(null)
+const canMove = computed(
+  () => props.batch.allowed_actions.includes('assign_line') && !!props.batch.line,
+)
+const canCancel = computed(() => props.batch.allowed_actions.includes('cancel'))
+
+/** Open the change-line or cancel tool. */
+async function openTool(t: 'line' | 'cancel') {
+  tool.value = tool.value === t ? null : t
+  chosen.value = null
+  note.value = ''
+  error.value = null
+  if (t === 'line' && lines.value === null) {
+    try {
+      const opts = await api.get<CatalogOptions>('/catalog/options')
+      lines.value = opts.open_lines.filter(
+        (l) => l.product_id === props.batch.product.id && l.id !== props.batch.line?.id,
+      )
+      newLine.value = lines.value.length === 1 ? lines.value[0]!.id : null
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Could not load order lines.'
+    }
+  }
+}
 </script>
 
 <template>
@@ -118,9 +152,86 @@ const closedText = computed(() => {
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-    <button v-if="canRecheck" type="button" class="recheck" :disabled="busy" @click="submit('rerun_check', false)">
+    <button
+      v-if="canRecheck"
+      type="button"
+      class="recheck"
+      :disabled="busy"
+      @click="submit('rerun_check', false)"
+    >
       Run check again
     </button>
+
+    <div v-if="canMove || canCancel" class="tools">
+      <button
+        v-if="canMove"
+        type="button"
+        class="recheck"
+        :aria-expanded="tool === 'line'"
+        @click="openTool('line')"
+      >
+        Change order line
+      </button>
+      <div v-if="tool === 'line'" class="confirm">
+        <p class="hint">
+          Moves the batch to another order line for the same product and checks it again against
+          that line’s spec.
+        </p>
+        <p v-if="lines && !lines.length" class="hint">
+          There is no other open order line for this product.
+        </p>
+        <label v-else-if="lines">
+          <span>Order line</span>
+          <select v-model="newLine">
+            <option :value="null" disabled>Choose an order line</option>
+            <option v-for="l in lines" :key="l.id" :value="l.id">
+              {{ l.label }} · {{ l.customer }} · {{ l.quantity }} {{ l.unit }}
+            </option>
+          </select>
+        </label>
+        <label v-if="lines?.length">
+          <span>Note (optional)</span>
+          <textarea v-model="note" rows="2" />
+        </label>
+        <button
+          v-if="lines?.length"
+          type="button"
+          class="go tone-approval"
+          :disabled="busy || !newLine"
+          @click="submit('assign_line', true, newLine)"
+        >
+          {{ busy ? 'Moving…' : 'Move and check again' }}
+        </button>
+      </div>
+
+      <button
+        v-if="canCancel"
+        type="button"
+        class="recheck subtle"
+        :aria-expanded="tool === 'cancel'"
+        @click="openTool('cancel')"
+      >
+        Cancel batch
+      </button>
+      <div v-if="tool === 'cancel'" class="confirm">
+        <p class="hint">
+          For a batch entered by mistake, such as a duplicate. It leaves the workflow but stays in
+          the history. If the material itself is bad, reject it instead.
+        </p>
+        <label>
+          <span>Why is it being cancelled?</span>
+          <textarea v-model="note" rows="2" required />
+        </label>
+        <button
+          type="button"
+          class="go tone-hold"
+          :disabled="busy || !note.trim()"
+          @click="submit('cancel')"
+        >
+          {{ busy ? 'Cancelling…' : 'Cancel batch' }}
+        </button>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -227,6 +338,27 @@ textarea {
 
 .closed {
   font-weight: 600;
+}
+
+.tools {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+}
+
+.subtle {
+  color: var(--ink-2);
+}
+
+select {
+  font: inherit;
+  font-size: var(--t-s);
+  padding: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .muted {

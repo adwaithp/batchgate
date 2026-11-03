@@ -17,10 +17,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => user.value !== null)
 
+  /** Whether the signed-in user holds a permission. */
   function can(permission: Permission): boolean {
     return user.value?.permissions.includes(permission) ?? false
   }
 
+  /** Sign in and load the user. */
   async function login(email: string, password: string) {
     const token = await api.postForm<TokenResponse>('/auth/token', { username: email, password })
     tokenStore.set(token.access_token)
@@ -41,6 +43,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Forget the session and return to the sign-in page. */
   function logout() {
     tokenStore.clear()
     user.value = null

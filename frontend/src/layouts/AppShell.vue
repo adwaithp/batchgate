@@ -17,15 +17,17 @@ interface NavItem {
 const items: NavItem[] = [
   { label: 'Dashboard', to: '/', permission: 'dashboard:view' },
   { label: 'Batches', to: '/batches', permission: 'batches:view' },
-  { label: 'Orders', permission: 'orders:view' },
-  { label: 'Specs', permission: 'specs:view' },
-  { label: 'Audit log', permission: 'audit:view' },
+  { label: 'Orders', to: '/orders', permission: 'orders:view' },
+  { label: 'Specs', to: '/specs', permission: 'specs:view' },
+  { label: 'Knowledge', to: '/knowledge', permission: 'knowledge:view' },
+  { label: 'Audit log', to: '/audit', permission: 'audit:view' },
   { label: 'Users', permission: 'users:manage' },
 ]
 
 const nav = computed(() => items.filter((i) => auth.can(i.permission)))
 
 const route = useRoute()
+/** Whether a navigation link matches the page. */
 function isActive(to: string) {
   return to === '/' ? route.path === '/' : route.path.startsWith(to)
 }
@@ -199,13 +201,21 @@ nav {
   .shell {
     grid-template-columns: 1fr;
   }
+  .side,
+  .content {
+    min-width: 0;
+  }
   .side {
     position: static;
     height: auto;
   }
   nav {
     grid-auto-flow: column;
+    grid-auto-columns: max-content;
     overflow-x: auto;
+  }
+  .nav-item {
+    white-space: nowrap;
   }
   .me {
     grid-template-columns: auto 1fr auto;

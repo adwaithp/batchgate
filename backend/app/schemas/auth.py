@@ -1,22 +1,22 @@
+"""Authentication schemas."""
+
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.models.enums import Role
+from app.schemas.common import Ref
 
 
 class Token(BaseModel):
+    """An access token."""
+
     access_token: str
     token_type: str = "bearer"
     expires_in: int
 
 
-class CustomerRef(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-
-
 class UserOut(BaseModel):
+    """The signed-in user with permissions and assigned customers."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -25,10 +25,12 @@ class UserOut(BaseModel):
     role: Role
     role_label: str
     permissions: list[str]
-    customers: list[CustomerRef]
+    customers: list[Ref]
 
 
 class DemoAccount(BaseModel):
+    """A one-click demo login."""
+
     email: EmailStr
     full_name: str
     role: Role
@@ -37,6 +39,8 @@ class DemoAccount(BaseModel):
 
 
 class DemoAccounts(BaseModel):
+    """Demo logins shown on the sign-in page."""
+
     enabled: bool
     password: str | None = None
     accounts: list[DemoAccount] = []

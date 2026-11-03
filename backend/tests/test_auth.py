@@ -1,3 +1,5 @@
+"""Sign-in, demo accounts, permissions and the startup schema check."""
+
 from sqlalchemy import select
 
 from app.models import AuditLog
@@ -58,18 +60,17 @@ def test_demo_accounts_listed(client):
     assert roles == {"admin", "qc_manager", "qc_analyst", "sales"}
 
 
-def test_outdated_database_is_reported_clearly(tmp_path, monkeypatch):
-    import sqlite3
-
+def test_a_database_not_built_by_migrations_is_reported_clearly(monkeypatch):
     import pytest
-    from sqlalchemy import create_engine
+    from sqlalchemy import text
 
     from app.core import database
+    from app.core.config import get_settings
 
-    path = tmp_path / "old.db"
-    sqlite3.connect(path).execute(
-        "create table batches (id integer primary key)"
-    ).connection.commit()
-    monkeypatch.setattr(database, "engine", create_engine(f"sqlite:///{path}"))
-    with pytest.raises(database.SchemaOutOfDate, match="seed --reset"):
-        database.check_schema()
+    with database.scratch_schema("batchgate_old_test") as old:
+        with old.begin() as conn:
+            conn.execute(text("CREATE TABLE batches (id integer primary key)"))
+        monkeypatch.setattr(database, "engine", old)
+        monkeypatch.setattr(get_settings(), "check_schema_on_start", True)
+        with pytest.raises(database.SchemaOutOfDateError, match="seed --reset"):
+            database.check_schema()

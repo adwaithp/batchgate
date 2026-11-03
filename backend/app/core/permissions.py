@@ -1,8 +1,4 @@
-"""Role-based permissions.
-
-Routes ask for a *permission*, never a role. Roles are just named bundles of permissions,
-so changing who can do what is a one-line edit here instead of a hunt through the routes.
-"""
+"""Role-based permissions. Routes check permissions, never role names."""
 
 from enum import StrEnum
 
@@ -10,9 +6,13 @@ from app.models.enums import Role
 
 
 class Permission(StrEnum):
+    """An action a user may be allowed to take."""
+
     VIEW_DASHBOARD = "dashboard:view"
     VIEW_ORDERS = "orders:view"
+    EDIT_ORDERS = "orders:edit"
     VIEW_ALL_CUSTOMERS = "customers:view_all"  # without it, only assigned customers
+    ADD_CUSTOMERS = "customers:add"
     VIEW_SPECS = "specs:view"
     EDIT_SPECS = "specs:edit"
     VIEW_BATCHES = "batches:view"
@@ -23,6 +23,8 @@ class Permission(StrEnum):
     HOLD_BATCH = "batch:hold"
     REJECT_BATCH = "batch:reject"
     VIEW_AUDIT_LOG = "audit:view"
+    VIEW_KNOWLEDGE = "knowledge:view"
+    EDIT_KNOWLEDGE = "knowledge:edit"
     MANAGE_USERS = "users:manage"
 
 
@@ -36,6 +38,7 @@ _ANALYST = {
     Permission.RUN_CHECK,
     Permission.PROPOSE_RELEASE,
     Permission.HOLD_BATCH,
+    Permission.VIEW_KNOWLEDGE,
 }
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
@@ -44,13 +47,23 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
         _ANALYST
         | {
             Permission.EDIT_SPECS,
+            Permission.EDIT_ORDERS,
+            Permission.ADD_CUSTOMERS,
             Permission.APPROVE_RELEASE,
             Permission.REJECT_BATCH,
             Permission.VIEW_AUDIT_LOG,
+            Permission.EDIT_KNOWLEDGE,
         }
     ),
+    # Sales enter their customers' orders but cannot change quality rules.
     Role.SALES: frozenset(
-        {Permission.VIEW_DASHBOARD, Permission.VIEW_ORDERS, Permission.VIEW_SPECS}
+        {
+            Permission.VIEW_DASHBOARD,
+            Permission.VIEW_ORDERS,
+            Permission.EDIT_ORDERS,
+            Permission.ADD_CUSTOMERS,
+            Permission.VIEW_SPECS,
+        }
     ),
     Role.ADMIN: frozenset(Permission),
 }
@@ -64,4 +77,5 @@ ROLE_LABELS: dict[Role, str] = {
 
 
 def permissions_for(role: Role) -> frozenset[Permission]:
+    """Return the permissions granted to `role`."""
     return ROLE_PERMISSIONS.get(role, frozenset())

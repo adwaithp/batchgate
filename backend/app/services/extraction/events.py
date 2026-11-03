@@ -1,7 +1,6 @@
-"""Live progress of COA reading: the worker publishes, the SSE endpoint relays it to the browser.
+"""COA reading progress over Redis: the worker publishes, the SSE endpoint relays.
 
-Redis pub/sub only reaches listeners that are subscribed at the time, so the latest event is
-also kept under a key for anyone who starts watching halfway through.
+The latest event is also stored under a key for listeners that join late.
 """
 
 import asyncio
@@ -22,12 +21,12 @@ WAITING = {
     "message": "Still waiting for the COA reader. Check back later, or enter the values by hand.",
 }
 
-# The stream ends on these; the browser then reloads the batch.
+# Events that end a stream.
 FINAL = {"done", "failed", "manual", "waiting"}
 
 
 def final_event(coa: COADocument) -> dict:
-    """The closing event for a COA whose reading is over (or will not happen)."""
+    """Return the closing event for a COA whose reading is over."""
     if coa.extraction_status == ExtractionStatus.DONE:
         if coa.extraction_model in (None, "manual"):
             return {"stage": "done", "message": "Values are in."}
@@ -40,37 +39,47 @@ def final_event(coa: COADocument) -> dict:
 
 
 def _channel(coa_id: int) -> str:
+    """Return the pub/sub channel for a COA."""
     return f"batchgate:coa:{coa_id}:events"
 
 
 def _last_key(coa_id: int) -> str:
+    """Return the key holding a COA's latest event."""
     return f"batchgate:coa:{coa_id}:last"
 
 
 def publish(coa_id: int, event: dict) -> None:
-    """Called from the worker (sync code)."""
+    """Publish a progress event; ignored when Redis is unavailable."""
     payload = json.dumps(event)
-    with redis.Redis.from_url(get_settings().redis_url) as r:
-        r.set(_last_key(coa_id), payload, ex=3600)
-        r.publish(_channel(coa_id), payload)
+    try:
+        with redis.Redis.from_url(get_settings().redis_url, socket_connect_timeout=2) as r:
+            r.set(_last_key(coa_id), payload, ex=3600)
+            r.publish(_channel(coa_id), payload)
+    except (redis.RedisError, OSError):
+        pass
 
 
 class Subscription:
+    """A live subscription to one COA's events."""
+
     def __init__(self, coa_id: int):
+        """Prepare a subscription for one COA."""
         self.coa_id = coa_id
         self._redis = aioredis.Redis.from_url(get_settings().redis_url)
         self._pubsub = self._redis.pubsub()
 
     async def start(self) -> "Subscription":
+        """Connect and subscribe."""
         await self._pubsub.subscribe(_channel(self.coa_id))
         return self
 
     async def last(self) -> dict | None:
+        """Return the latest stored event, or None."""
         raw = await self._redis.get(_last_key(self.coa_id))
         return json.loads(raw) if raw else None
 
     async def next(self, timeout: float) -> dict | None:
-        """The next event, or None if nothing arrived within `timeout` seconds."""
+        """Return the next event, or None after `timeout` seconds."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while (left := deadline - loop.time()) > 0:
@@ -80,9 +89,11 @@ class Subscription:
         return None
 
     async def close(self) -> None:
+        """Unsubscribe and close the connection."""
         await self._pubsub.aclose()
         await self._redis.aclose()
 
 
 async def subscribe(coa_id: int) -> Subscription:
+    """Return a started subscription to a COA's events."""
     return await Subscription(coa_id).start()

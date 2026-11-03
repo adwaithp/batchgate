@@ -22,15 +22,18 @@ const rows = computed<ParameterCheck[]>(() => {
   }))
 })
 
+/** A parameter's reading from one COA. */
 function reading(check: ParameterCheck, source: CoaSource): Reading | undefined {
   return check.readings.find((r) => r.source === source)
 }
 
+/** A reading's value with its unit. */
 function shown(r: Reading): string {
   const raw = r.raw_value.trim()
   return r.unit && !/[a-zA-Z%°]/.test(raw) ? `${raw} ${r.unit}` : raw
 }
 
+/** Whether a parameter has a note worth showing. */
 const hasNotes = (c: ParameterCheck) => c.discrepancy || (c.note && c.status !== 'pass')
 </script>
 
@@ -68,7 +71,9 @@ const hasNotes = (c: ParameterCheck) => c.discrepancy || (c.note && c.status !==
             </tr>
             <tr v-if="hasNotes(c)" class="note-row">
               <td colspan="5">
-                <p v-if="c.discrepancy" class="note disc">Factory and lab disagree. {{ c.discrepancy }}</p>
+                <p v-if="c.discrepancy" class="note disc">
+                  Factory and lab disagree. {{ c.discrepancy }}
+                </p>
                 <p v-if="c.note && c.status !== 'pass'" class="note">{{ c.note }}</p>
               </td>
             </tr>

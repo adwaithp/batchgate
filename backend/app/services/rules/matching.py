@@ -1,23 +1,30 @@
-"""Match result rows on a COA ("Fe content (as Fe)") to spec parameters ("Iron (as Fe)")."""
+"""Match COA result rows to spec parameters by id, name, alias or fuzzy match."""
 
 import re
 from difflib import SequenceMatcher
 
 from app.services.rules.types import ParamSpec, ResultInput
 
-_SPELLING = {"sulphated": "sulfated", "sulphate": "sulfate", "sulphur": "sulfur", "colour": "color"}
+_SPELLING = {
+    "sulphated": "sulfated",
+    "sulphate": "sulfate",
+    "sulphur": "sulfur",
+    "colour": "color",
+}
 
 
 def normalize_name(name: str) -> str:
+    """Normalise a test name for matching."""
     s = name.lower()
     for uk, us in _SPELLING.items():
         s = s.replace(uk, us)
-    s = re.sub(r"@.*$", "", s)  # "Specific gravity @ 25 °C" -> "specific gravity"
+    s = re.sub(r"@.*$", "", s)  # e.g. "Specific gravity @ 25 °C" -> "specific gravity"
     s = re.sub(r"[^a-z0-9()+ ]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 
 def _keys(name: str) -> set[str]:
+    """Return the match keys for a name, with and without brackets."""
     full = normalize_name(name)
     keys = {full.replace("(", "").replace(")", "").strip()}
     without_parens = re.sub(r"\(.*?\)", "", full).strip()
@@ -27,6 +34,7 @@ def _keys(name: str) -> set[str]:
 
 
 def _param_keys(p: ParamSpec) -> set[str]:
+    """Return the match keys for a parameter and its aliases."""
     keys: set[str] = set()
     for n in [p.name, *p.aliases]:
         keys |= _keys(n)
@@ -39,11 +47,10 @@ FUZZY_THRESHOLD = 0.88
 def match_results(
     params: list[ParamSpec], results: list[ResultInput]
 ) -> tuple[dict[int, ResultInput], list[ResultInput]]:
-    """Return {parameter_id: result} and the results that matched nothing.
+    """Return {parameter_id: result} and the unmatched results.
 
-    Order of trust: an explicit parameter_id, then exact name/alias keys, then a fuzzy match
-    only when it is clearly the single best candidate. Ambiguous rows stay unmatched so a
-    person decides, instead of the engine guessing.
+    Explicit ids win, then exact names or aliases, then a fuzzy match only when one candidate is
+    clearly best.
     """
     by_id = {p.id: p for p in params}
     keys = {p.id: _param_keys(p) for p in params}
@@ -51,8 +58,9 @@ def match_results(
     unmatched: list[ResultInput] = []
 
     def claim(pid: int, r: ResultInput) -> None:
+        """Assign a result to a parameter unless it already has one."""
         if pid in matched:
-            unmatched.append(r)  # duplicate row for the same test: keep the first
+            unmatched.append(r)
         else:
             matched[pid] = r
 

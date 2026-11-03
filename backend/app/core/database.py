@@ -1,37 +1,59 @@
-from collections.abc import Generator
+"""Database engine, sessions and the startup schema check."""
 
-from sqlalchemy import create_engine, event
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
+
+from sqlalchemy import Engine, MetaData, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
 
+# Named constraints let migrations drop or alter them by name.
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
 
 class Base(DeclarativeBase):
-    pass
+    """Declarative base with named constraints."""
+
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-def _make_engine(url: str):
-    kwargs = {}
-    if url.startswith("sqlite"):
-        kwargs["connect_args"] = {"check_same_thread": False}
-    engine = create_engine(url, **kwargs)
-
-    if url.startswith("sqlite"):
-
-        @event.listens_for(engine, "connect")
-        def _enable_sqlite_fks(dbapi_conn, _):
-            cursor = dbapi_conn.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
-
-    return engine
+def make_engine(schema: str | None = None):
+    """Create an engine for the configured database, optionally on `schema`."""
+    settings = get_settings()
+    schema = schema or settings.db_schema
+    connect_args = {"options": f"-csearch_path={schema}"} if schema else {}
+    return create_engine(settings.sqlalchemy_url, pool_pre_ping=True, connect_args=connect_args)
 
 
-engine = _make_engine(get_settings().database_url)
+@contextmanager
+def scratch_schema(name: str) -> Iterator[Engine]:
+    """Yield an engine on a fresh schema and drop the schema afterwards."""
+    admin = make_engine("public")
+    with admin.begin() as conn:
+        conn.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{name}" CASCADE; CREATE SCHEMA "{name}"')
+    engine = make_engine(name)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+        with admin.begin() as conn:
+            conn.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{name}" CASCADE')
+        admin.dispose()
+
+
+engine = make_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
 def get_db() -> Generator[Session, None, None]:
+    """Yield a session for one request."""
     db = SessionLocal()
     try:
         yield db
@@ -39,34 +61,15 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-class SchemaOutOfDate(RuntimeError):
-    pass
+class SchemaOutOfDateError(RuntimeError):
+    """The database is not at the latest migration."""
 
 
 def check_schema() -> None:
-    """Fail at startup, with the fix spelled out, if the database predates the models.
+    """Raise SchemaOutOfDateError, with the fix, unless the database is current."""
+    from app.core.migrations import schema_problem
 
-    Until migrations are added, the demo database is rebuilt instead of migrated.
-    """
-    from sqlalchemy import inspect
-
-    import app.models  # noqa: F401  (register tables)
-
-    inspector = inspect(engine)
-    existing = set(inspector.get_table_names())
-    if not existing:
-        return  # empty database: the seed script creates everything
-    problems = []
-    for table in Base.metadata.sorted_tables:
-        if table.name not in existing:
-            problems.append(f"table {table.name}")
-            continue
-        columns = {c["name"] for c in inspector.get_columns(table.name)}
-        problems += [f"{table.name}.{c.name}" for c in table.columns if c.name not in columns]
-    if problems:
-        raise SchemaOutOfDate(
-            "The database is older than the code (missing: "
-            + ", ".join(problems[:5])
-            + (", ..." if len(problems) > 5 else "")
-            + "). Rebuild the demo data:  uv run python -m app.seed --reset"
-        )
+    if not get_settings().check_schema_on_start:
+        return
+    if problem := schema_problem(engine):
+        raise SchemaOutOfDateError(problem)

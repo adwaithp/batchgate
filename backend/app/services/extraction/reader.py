@@ -1,46 +1,21 @@
-"""Claude reads a COA (PDF or image) and returns what is printed on it. Nothing more.
+"""Read a COA (PDF or image) with Claude and return what is printed on it.
 
-It transcribes; it never converts units, compares against limits or decides anything. That is
-the rules engine's job. No database here, so evals can call read_coa() directly.
+It only transcribes; units, limits and decisions belong to the rules engine.
 """
 
 import base64
-from datetime import date
 from pathlib import Path
 
 import anthropic
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from app.core.config import get_settings
+from app.schemas.extraction import CoaExtraction
 from app.services.rules.types import ParamSpec
 
 
-class ExtractedRow(BaseModel):
-    name_as_written: str
-    raw_value: str
-    unit: str | None
-    method: str | None
-    limit_as_printed: str | None  # helps keep the result and limit columns apart; not used
-    confidence: float
-    parameter_id: int | None
-
-
-class CoaExtraction(BaseModel):
-    is_coa: bool
-    issuer_name: str | None
-    product_name: str | None
-    cas_number: str | None
-    batch_number: str | None
-    po_reference: str | None
-    mfg_date: date | None
-    test_date: date | None
-    expiry_date: date | None
-    results: list[ExtractedRow]
-    warnings: list[str]
-
-
-class ExtractionFailed(Exception):
-    """The document could not be read. The message is shown to the person who uploaded it."""
+class ExtractionError(Exception):
+    """The document could not be read; the message is shown to the uploader."""
 
 
 SYSTEM_PROMPT = """\
@@ -57,9 +32,12 @@ specification, limit or typical column. Put the printed limit in limit_as_printe
 - Put the unit in unit when it is printed in a unit column or after the value; leave it null \
 if no unit is printed. Do not guess units.
 - Only list tests that are actually printed. Never fill in a value that is not on the page.
-- Header fields: copy the product name, CAS number, batch/lot number and PO reference as \
-printed. Give dates as YYYY-MM-DD; use null if a date is missing or its day/month order is \
-ambiguous (for example 03/04/2026 with no other clue).
+- Header fields: copy the issuer (the company or laboratory that issued the document, usually \
+the letterhead), product name, CAS number, batch/lot number and PO reference as printed.
+- Dates: copy each date exactly as printed into its *_as_printed field ("June 2031", \
+"03/04/2026", "28.10.2027"). Also give it as YYYY-MM-DD in the date field, but only when day, \
+month and year are all printed and their order is certain; otherwise null. Never guess the \
+day/month order (03/04/2026 with no other clue) and never fill in a missing day.
 - If a value is unreadable, still list the row with your best reading and a low confidence.
 - Add a warning for anything a reviewer should know: rotated or blurred pages, handwritten \
 corrections, more than one batch on the document, values you could not read, results that \
@@ -71,12 +49,16 @@ confidence (per row) is how sure you are that name, value and unit are transcrib
 - about 0.7: partly legible, smudged, or unclear which column the value is in.
 - 0.5 or lower: a guess.
 
+issuer_confidence uses the same scale for the issuer name: low when the letterhead is cut off, \
+a logo you can't read, or more than one company is named and it's unclear which issued it.
+
 parameter_id: the user lists the spec parameters for this batch. If a row clearly measures one \
 of them (names often differ: "Fe content" vs "Iron (as Fe)"), give its id; otherwise null. \
 Never change a row's name or value to fit the spec."""
 
 
 def _parameter_list(params: list[ParamSpec]) -> str:
+    """Describe the spec's parameters so Claude can hint matches."""
     if not params:
         return "No spec is linked to this batch yet; set parameter_id to null for every row."
     lines = []
@@ -88,6 +70,7 @@ def _parameter_list(params: list[ParamSpec]) -> str:
 
 
 def _file_block(path: Path, content_type: str) -> dict:
+    """Build the document or image content block for a file."""
     data = base64.standard_b64encode(path.read_bytes()).decode()
     kind = "document" if content_type == "application/pdf" else "image"
     return {"type": kind, "source": {"type": "base64", "media_type": content_type, "data": data}}
@@ -100,6 +83,7 @@ def read_coa(
     *,
     client: anthropic.Anthropic | None = None,
 ) -> CoaExtraction:
+    """Read one COA and return the structured extraction."""
     settings = get_settings()
     client = client or anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=180)
     try:
@@ -121,25 +105,25 @@ def read_coa(
             ],
             output_format=CoaExtraction,
             output_config={"effort": "medium"},
-            # On a safety decline, the API retries on a fallback model in the same call.
+            # on a safety decline the API retries on a fallback model
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
         )
     except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
-        raise ExtractionFailed("Couldn't reach Claude. Try again later.") from e
+        raise ExtractionError("Couldn't reach Claude. Try again later.") from e
     except anthropic.RateLimitError as e:
-        raise ExtractionFailed("Claude is busy right now. Try again in a minute.") from e
+        raise ExtractionError("Claude is busy right now. Try again in a minute.") from e
     except anthropic.BadRequestError as e:
-        raise ExtractionFailed(f"Claude couldn't open this file ({e.message}).") from e
+        raise ExtractionError(f"Claude couldn't open this file ({e.message}).") from e
     except anthropic.APIStatusError as e:
-        raise ExtractionFailed(f"Claude returned an error ({e.status_code}).") from e
+        raise ExtractionError(f"Claude returned an error ({e.status_code}).") from e
     except ValidationError as e:
-        raise ExtractionFailed("Claude's answer was not in the expected shape.") from e
+        raise ExtractionError("Claude's answer was not in the expected shape.") from e
 
     if response.stop_reason == "refusal":
-        raise ExtractionFailed("Claude declined to read this document.")
+        raise ExtractionError("Claude declined to read this document.")
     if response.stop_reason == "max_tokens":
-        raise ExtractionFailed("The COA is too long to read in one go.")
+        raise ExtractionError("The COA is too long to read in one go.")
     if response.parsed_output is None:
-        raise ExtractionFailed("Claude's answer was not in the expected shape.")
+        raise ExtractionError("Claude's answer was not in the expected shape.")
     return response.parsed_output

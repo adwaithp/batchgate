@@ -1,3 +1,5 @@
+"""User accounts."""
+
 from sqlalchemy import Column, ForeignKey, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -5,7 +7,7 @@ from app.core.database import Base
 from app.models.enums import Role
 from app.models.mixins import TimestampMixin, str_enum
 
-# Sales users only see orders for the customers they manage.
+# Customers each sales user manages.
 user_customers = Table(
     "user_customers",
     Base.metadata,
@@ -15,6 +17,8 @@ user_customers = Table(
 
 
 class User(TimestampMixin, Base):
+    """A person who signs in; sales users see only their assigned customers."""
+
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -1,7 +1,7 @@
 """Batch workflow: COAs in, checks run, people decide.
 
-Every way a COA can arrive (upload today; email, ERP or MCP later) goes through ingest_coa().
-Every way a check can be triggered goes through run_check(). Nothing else writes verdicts.
+Every COA enters through ingest_coa() and every check runs through run_check(); nothing else writes
+verdicts.
 """
 
 import hashlib
@@ -37,13 +37,10 @@ from app.models.enums import (
     OrderStatus,
     SupplierKind,
 )
+from app.schemas.extraction import CoaExtraction, ExtractedRow
 from app.services import audit
-from app.services.extraction.reader import (
-    CoaExtraction,
-    ExtractedRow,
-    ExtractionFailed,
-    read_coa,
-)
+from app.services.extraction.reader import ExtractionError, read_coa
+from app.services.extraction.verify import pdf_text, verify_reading
 from app.services.rules.engine import ENGINE_VERSION, check_batch
 from app.services.rules.matching import match_results
 from app.services.rules.types import (
@@ -58,27 +55,26 @@ from app.services.rules.types import (
 
 
 class WorkflowError(Exception):
-    """A request that breaks a business rule. Routes turn it into a 4xx with this message."""
+    """A request that breaks a business rule; returned as a 4xx error."""
 
     def __init__(self, message: str, status_code: int = 409):
+        """Store the message and HTTP status code."""
         super().__init__(message)
         self.status_code = status_code
 
 
-TERMINAL = {BatchStatus.RELEASED, BatchStatus.REJECTED}
+TERMINAL = {BatchStatus.RELEASED, BatchStatus.REJECTED, BatchStatus.CANCELLED}
 
 DECISION_TO_STATUS = {
-    # A clean result skips the analyst, but a QC manager still approves.
+    # A clean result skips the analyst but still needs a QC manager.
     Decision.RELEASE: BatchStatus.PENDING_APPROVAL,
     Decision.REVIEW: BatchStatus.PENDING_REVIEW,
     Decision.HOLD: BatchStatus.ON_HOLD,
 }
 
 
-# ---- ORM -> engine inputs ----------------------------------------------------------------
-
-
 def engine_config() -> EngineConfig:
+    """Build the engine configuration from settings."""
     s = get_settings()
     return EngineConfig(
         require_lab_coa=s.require_lab_coa,
@@ -88,10 +84,12 @@ def engine_config() -> EngineConfig:
 
 
 def spec_input(spec: Spec) -> SpecInput:
+    """Convert a spec to the engine's input type."""
     return SpecInput(
         product_name=spec.product.name,
         cas_number=spec.product.cas_number,
         product_synonyms=list(spec.product.synonyms or []),
+        grade=spec.grade,
         parameters=[
             ParamSpec(
                 id=p.id,
@@ -112,26 +110,39 @@ def spec_input(spec: Spec) -> SpecInput:
 
 
 def active_coas(batch: Batch) -> list[COADocument]:
-    """The latest COA per source whose values are in. Older or empty ones don't count."""
+    """Return the latest COA per source whose values are in."""
     return [
         c for c in batch.coas if not c.superseded and c.extraction_status == ExtractionStatus.DONE
     ]
 
 
+def _expected_issuer(batch: Batch, coa: COADocument) -> str | None:
+    """Return who should have issued the COA: factory or chosen lab."""
+    if coa.source == CoaSource.FACTORY:
+        return batch.factory.name if batch.factory else None
+    return coa.issuer.name if coa.issuer else None
+
+
 def batch_input(batch: Batch) -> BatchInput:
+    """Convert a batch and its active COAs to the engine's input type."""
     return BatchInput(
         batch_number=batch.batch_number,
         coas=[
             CoaInput(
                 id=c.id,
                 source=c.source,
-                issuer_name=c.issuer.name if c.issuer else c.issuer_name,
+                issuer_name=c.issuer_name,
+                issuer_confidence=c.issuer_confidence,
+                expected_issuer=_expected_issuer(batch, c),
                 product_name=c.product_name,
                 cas_number=c.cas_number,
                 batch_number=c.batch_number,
                 mfg_date=c.mfg_date,
                 test_date=c.test_date,
                 expiry_date=c.expiry_date,
+                mfg_date_as_printed=c.mfg_date_as_printed,
+                test_date_as_printed=c.test_date_as_printed,
+                expiry_date_as_printed=c.expiry_date_as_printed,
                 results=[
                     ResultInput(
                         name_as_written=r.name_as_written,
@@ -148,23 +159,20 @@ def batch_input(batch: Batch) -> BatchInput:
     )
 
 
-# ---- Checks ------------------------------------------------------------------------------
-
-
 def _ts(dt: datetime) -> datetime:
-    """SQLite drops time zones on read; compare everything as naive UTC."""
+    """Return a timestamp as naive UTC for comparison."""
     return dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo else dt
 
 
 def latest_verdict(batch: Batch) -> Verdict | None:
+    """Return the batch's most recent verdict, or None."""
     return max(batch.verdicts, key=lambda v: (_ts(v.created_at), v.id or 0), default=None)
 
 
 def run_check(db: Session, batch: Batch, *, actor: User | None = None) -> Verdict | None:
-    """Re-evaluate a batch and move it to the status the verdict implies.
+    """Run the rules engine and move the batch to the status its verdict implies.
 
-    No verdict is written when there is nothing to check against (no line, so no spec) or
-    nothing to check (no COA values yet).
+    No verdict is written without an order line or COA values.
     """
     if batch.status in TERMINAL:
         raise WorkflowError(f"Batch {batch.batch_number} is {batch.status.value}; it is closed.")
@@ -188,7 +196,7 @@ def run_check(db: Session, batch: Batch, *, actor: User | None = None) -> Verdic
             and previous_verdict.engine_version == ENGINE_VERSION
             and previous_verdict.details == details
         ):
-            verdict = previous_verdict  # nothing changed: keep the history readable
+            verdict = previous_verdict  # unchanged result: keep the history short
         else:
             verdict = Verdict(
                 batch=batch,
@@ -218,7 +226,7 @@ def run_check(db: Session, batch: Batch, *, actor: User | None = None) -> Verdic
 
 
 def _record_matches(batch: Batch, spec: SpecInput) -> None:
-    """Remember which spec parameter each COA row is evidence for (shown in the entry form)."""
+    """Store which spec parameter each COA row was matched to."""
     valid = {p.id for p in spec.parameters}
     for coa in active_coas(batch):
         for row in coa.results:
@@ -238,6 +246,8 @@ def _record_matches(batch: Batch, spec: SpecInput) -> None:
 
 @dataclass
 class LineSuggestion:
+    """An open order line a batch could belong to, with its check result."""
+
     line: OrderLine
     decision: Decision
     summary: str
@@ -245,10 +255,7 @@ class LineSuggestion:
 
 
 def suggest_lines(db: Session, batch: Batch) -> list[LineSuggestion]:
-    """For a batch with no order line: which open lines could it be, and does it fit their spec?
-
-    Suggestions only. A person confirms, because shipping the wrong grade is worse than waiting.
-    """
+    """Check a batch without an order line against each open line's spec."""
     coas = active_coas(batch)
     if not coas:
         return []
@@ -275,11 +282,10 @@ def suggest_lines(db: Session, batch: Batch) -> list[LineSuggestion]:
     return sorted(out, key=lambda s: (rank[s.decision], len(s.failing), s.line.id))
 
 
-# ---- Ingest ------------------------------------------------------------------------------
-
-
 @dataclass
 class IncomingFile:
+    """An uploaded file."""
+
     filename: str
     content_type: str
     data: bytes
@@ -289,6 +295,7 @@ ALLOWED_TYPES = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": "
 
 
 def _store(file: IncomingFile) -> tuple[str, str]:
+    """Validate and save an uploaded file; return its path and SHA-256 digest."""
     settings = get_settings()
     if file.content_type not in ALLOWED_TYPES:
         raise WorkflowError("Upload a PDF, PNG or JPEG file.", 415)
@@ -316,6 +323,7 @@ def get_or_create_batch(
     quantity: float | None = None,
     actor: User | None = None,
 ) -> Batch:
+    """Return the factory's batch with this number, registering it if new."""
     batch_number = batch_number.strip()
     if not batch_number:
         raise WorkflowError("Batch number is required.", 422)
@@ -374,7 +382,7 @@ def ingest_coa(
     actor: User | None,
     origin: str = "upload",
 ) -> COADocument:
-    """The single way a COA enters BatchGate. A file is then read by the worker (extract_coa)."""
+    """Attach a COA to a batch; uploaded files are read by the worker."""
     if batch.status in TERMINAL:
         raise WorkflowError(f"Batch {batch.batch_number} is {batch.status.value}; it is closed.")
 
@@ -423,13 +431,17 @@ def ingest_coa(
         origin=coa.origin,
         filename=coa.original_filename,
     )
-    # The COA has no values yet, so the batch waits for them (or for the extractor).
+    # No values yet: wait for them.
     run_check(db, batch, actor=actor)
     return coa
 
 
 @dataclass
 class CoaHeader:
+    """COA header fields as printed."""
+
+    issuer_name: str | None = None
+    issuer_confidence: float = 1.0
     product_name: str | None = None
     cas_number: str | None = None
     batch_number: str | None = None
@@ -437,10 +449,15 @@ class CoaHeader:
     mfg_date: date | None = None
     test_date: date | None = None
     expiry_date: date | None = None
+    mfg_date_as_printed: str | None = None
+    test_date_as_printed: str | None = None
+    expiry_date_as_printed: str | None = None
 
 
 @dataclass
 class CoaRow:
+    """One COA result row with its confidence."""
+
     name_as_written: str
     raw_value: str
     unit: str | None = None
@@ -458,7 +475,7 @@ def save_coa_data(
     actor: User | None,
     model: str | None = None,
 ) -> Verdict | None:
-    """Store the values read off a COA (by the model, or typed by a person) and re-check."""
+    """Store a COA's values and re-check the batch."""
     batch = coa.batch
     if batch.status in TERMINAL:
         raise WorkflowError(f"Batch {batch.batch_number} is {batch.status.value}; it is closed.")
@@ -502,11 +519,7 @@ Reader = Callable[[Path, str, list[ParamSpec]], CoaExtraction]
 
 
 def extract_coa(db: Session, coa: COADocument, *, read: Reader = read_coa) -> None:
-    """Have the model read an uploaded COA, then save its values like a person would.
-
-    Runs in the worker, minutes or seconds after ingest_coa(). Any failure leaves the COA
-    for manual entry. Low-confidence rows reach the engine as such and send the batch to REVIEW.
-    """
+    """Read an uploaded COA with Claude and save the values."""
     if coa.extraction_status != ExtractionStatus.PENDING or not coa.storage_path:
         return
     spec = spec_input(coa.batch.line.spec) if coa.batch.line else None
@@ -515,7 +528,7 @@ def extract_coa(db: Session, coa: COADocument, *, read: Reader = read_coa) -> No
         extraction = read(
             Path(coa.storage_path), coa.content_type or "", spec.parameters if spec else []
         )
-    except ExtractionFailed as e:
+    except ExtractionError as e:
         error = str(e)
     else:
         if not extraction.is_coa:
@@ -523,7 +536,7 @@ def extract_coa(db: Session, coa: COADocument, *, read: Reader = read_coa) -> No
         elif not extraction.results:
             error = "No test results were found on this COA."
 
-    # Reading takes a while: a person may have typed the values in, or a newer COA arrived.
+    # Skip if values were typed meanwhile or a newer COA replaced this one.
     db.expire_all()
     if (
         coa.extraction_status != ExtractionStatus.PENDING
@@ -531,6 +544,11 @@ def extract_coa(db: Session, coa: COADocument, *, read: Reader = read_coa) -> No
         or coa.batch.status in TERMINAL
     ):
         return
+
+    if extraction is not None and not error:
+        # Unsure values: checked against the PDF's text layer.
+        text = pdf_text(Path(coa.storage_path), coa.content_type or "")
+        extraction, _ = verify_reading(extraction, text)
 
     coa.raw_extraction = extraction.model_dump(mode="json") if extraction else None
     if error or extraction is None:
@@ -548,6 +566,8 @@ def extract_coa(db: Session, coa: COADocument, *, read: Reader = read_coa) -> No
         return
 
     header = CoaHeader(
+        issuer_name=extraction.issuer_name,
+        issuer_confidence=_clamp(extraction.issuer_confidence),
         product_name=extraction.product_name,
         cas_number=extraction.cas_number,
         batch_number=extraction.batch_number,
@@ -555,24 +575,28 @@ def extract_coa(db: Session, coa: COADocument, *, read: Reader = read_coa) -> No
         mfg_date=extraction.mfg_date,
         test_date=extraction.test_date,
         expiry_date=extraction.expiry_date,
+        mfg_date_as_printed=extraction.mfg_date_as_printed,
+        test_date_as_printed=extraction.test_date_as_printed,
+        expiry_date_as_printed=extraction.expiry_date_as_printed,
     )
     rows = _rows_with_hints(spec, extraction.results)
     save_coa_data(db, coa, header, rows, actor=None, model=get_settings().extraction_model)
 
 
-def _rows_with_hints(spec: SpecInput | None, extracted: list[ExtractedRow]) -> list[CoaRow]:
-    """Turn the model's rows into CoaRows, using its parameter hints only where names don't match.
+def _clamp(confidence: float) -> float:
+    """Clamp a confidence to the range 0 to 1."""
+    return min(max(confidence, 0.0), 1.0)
 
-    An explicit parameter_id beats name matching in the engine, so a wrong hint would skip the
-    matcher. Names are matched first; a hint only fills a gap the matcher left.
-    """
+
+def _rows_with_hints(spec: SpecInput | None, extracted: list[ExtractedRow]) -> list[CoaRow]:
+    """Convert the model's rows, using its parameter hints only for gaps."""
     rows = [
         CoaRow(
             name_as_written=r.name_as_written,
             raw_value=r.raw_value,
             unit=r.unit,
             method=r.method,
-            confidence=min(max(r.confidence, 0.0), 1.0),
+            confidence=_clamp(r.confidence),
         )
         for r in extracted
     ]
@@ -590,11 +614,10 @@ def _rows_with_hints(spec: SpecInput | None, extracted: list[ExtractedRow]) -> l
     return rows
 
 
-# ---- Human decisions ---------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ActionRule:
+    """Who may take an action, from which statuses, and with what result."""
+
     permission: Permission
     from_statuses: frozenset[BatchStatus]
     to_status: BatchStatus | None  # None: decided by a re-check
@@ -606,7 +629,7 @@ ACTION_RULES: dict[BatchActionType, ActionRule] = {
         Permission.PROPOSE_RELEASE,
         frozenset({BatchStatus.PENDING_REVIEW, BatchStatus.ON_HOLD}),
         BatchStatus.PENDING_APPROVAL,
-        note_required=True,  # always overrides the engine, so say why
+        note_required=True,  # always overrides the engine, so a note is required
     ),
     BatchActionType.APPROVE_RELEASE: ActionRule(
         Permission.APPROVE_RELEASE,
@@ -640,11 +663,18 @@ ACTION_RULES: dict[BatchActionType, ActionRule] = {
         None,
         note_required=False,
     ),
+    # Withdraw a batch entered by mistake; it is kept, not deleted.
+    BatchActionType.CANCEL: ActionRule(
+        Permission.UPLOAD_COA,
+        frozenset(set(BatchStatus) - TERMINAL),
+        BatchStatus.CANCELLED,
+        note_required=True,
+    ),
 }
 
 
 def _release_proposer(batch: Batch) -> User | None:
-    """Who proposed the pending release, if a person did (not the engine)."""
+    """Return the user who proposed the pending release, if any."""
     verdict = latest_verdict(batch)
     since = verdict.created_at if verdict else None
     for action in reversed(batch.actions):
@@ -656,7 +686,7 @@ def _release_proposer(batch: Batch) -> User | None:
 
 
 def blocked_reason(batch: Batch, action: BatchActionType, user: User) -> str | None:
-    """Why `user` can't take `action` right now, or None if they can."""
+    """Return why `user` cannot take `action` now, or None."""
     rule = ACTION_RULES[action]
     if rule.permission not in permissions_for(user.role):
         return "Your role can't do this."
@@ -672,6 +702,7 @@ def blocked_reason(batch: Batch, action: BatchActionType, user: User) -> str | N
 
 
 def allowed_actions(batch: Batch, user: User) -> list[BatchActionType]:
+    """Return the actions `user` may take on the batch now."""
     return [a for a in ACTION_RULES if blocked_reason(batch, a, user) is None]
 
 
@@ -684,6 +715,7 @@ def apply_action(
     note: str | None = None,
     line_id: int | None = None,
 ) -> Batch:
+    """Apply a person's decision, record it and update the batch status."""
     reason = blocked_reason(batch, action, actor)
     if reason:
         raise WorkflowError(reason, 403 if reason == "Your role can't do this." else 409)
@@ -700,6 +732,10 @@ def apply_action(
         line = db.get(OrderLine, line_id) if line_id is not None else None
         if line is None or line.product_id != batch.product_id:
             raise WorkflowError("Choose an order line for the same product.", 422)
+        if line.order.status == OrderStatus.SHIPPED:
+            raise WorkflowError(f"{line.order.po_number} has already shipped.", 422)
+        if batch.line_id == line.id:
+            raise WorkflowError("The batch is already on this order line.", 422)
         old_order = batch.line.order if batch.line else None
         batch.line = line
         db.flush()
@@ -721,6 +757,10 @@ def apply_action(
         db.flush()
         if batch.line:
             recompute_order_status(batch.line.order)
+        if batch.status in (BatchStatus.RELEASED, BatchStatus.REJECTED):
+            from app.services import knowledge  # avoids a circular import
+
+            knowledge.record_case(db, batch)
     else:
         db.flush()
         run_check(db, batch, actor=actor)
@@ -739,18 +779,18 @@ def apply_action(
     return batch
 
 
-# ---- Orders ------------------------------------------------------------------------------
-
-
 def released_quantity(line: OrderLine) -> float:
+    """Return the total quantity released on an order line."""
     return sum(b.quantity or 0 for b in line.batches if b.status == BatchStatus.RELEASED)
 
 
 def line_is_ready(line: OrderLine) -> bool:
+    """Return True when released batches cover the line's quantity."""
     return released_quantity(line) >= line.quantity - 1e-9
 
 
 def recompute_order_status(order: Order) -> None:
+    """Update an order's status from its lines' progress."""
     if order.status == OrderStatus.SHIPPED:
         return
     ready = [line_is_ready(line) for line in order.lines]

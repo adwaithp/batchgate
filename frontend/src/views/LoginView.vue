@@ -24,6 +24,7 @@ onMounted(async () => {
   }
 })
 
+/** Sign in and go to the requested page. */
 async function signIn(withEmail: string, withPassword: string) {
   error.value = null
   submitting.value = withEmail
@@ -43,6 +44,7 @@ async function signIn(withEmail: string, withPassword: string) {
   }
 }
 
+/** Sign in with the form. */
 function onSubmit() {
   signIn(email.value.trim(), password.value)
 }
@@ -93,7 +95,9 @@ const sample = [
             </tr>
           </tbody>
         </table>
-        <p class="why">Insoluble matter is above the 0.10 % limit, so the batch stays in the warehouse.</p>
+        <p class="why">
+          Insoluble matter is above the 0.10 % limit, so the batch stays in the warehouse.
+        </p>
       </figure>
     </section>
 

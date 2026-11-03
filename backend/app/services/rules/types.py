@@ -1,4 +1,4 @@
-"""Plain data in and out of the rules engine. No database, no AI: easy to test and to evaluate."""
+"""Plain dataclasses in and out of the rules engine."""
 
 from dataclasses import asdict, dataclass, field
 from datetime import date
@@ -8,12 +8,16 @@ from app.models.enums import CoaSource, Decision, RuleType
 
 
 class Severity(StrEnum):
-    HOLD = "hold"  # blocks release outright
-    REVIEW = "review"  # a person must look before release
-    INFO = "info"  # shown, does not change the decision
+    """How much a finding matters."""
+
+    HOLD = "hold"
+    REVIEW = "review"
+    INFO = "info"  # shown only
 
 
 class ParamStatus(StrEnum):
+    """Result of checking one parameter."""
+
     PASS = "pass"
     FAIL = "fail"
     UNCLEAR = "unclear"
@@ -21,17 +25,18 @@ class ParamStatus(StrEnum):
 
 
 class CheckStatus(StrEnum):
+    """Result of an identity check."""
+
     PASS = "pass"
     FAIL = "fail"
     WARN = "warn"
     MISSING = "missing"
 
 
-# ---- Inputs ------------------------------------------------------------------------------
-
-
 @dataclass
 class ParamSpec:
+    """One spec parameter."""
+
     id: int
     name: str
     rule_type: RuleType
@@ -47,59 +52,75 @@ class ParamSpec:
 
 @dataclass
 class SpecInput:
+    """The spec a batch is checked against."""
+
     product_name: str
     parameters: list[ParamSpec]
     cas_number: str | None = None
     product_synonyms: list[str] = field(default_factory=list)
+    grade: str | None = None  # e.g. "40% solution"
 
 
 @dataclass
 class ResultInput:
+    """One result row from a COA."""
+
     name_as_written: str
     raw_value: str
     unit: str | None = None
     confidence: float = 1.0
-    parameter_id: int | None = None  # set when a person (or the extractor) already matched it
+    parameter_id: int | None = None  # set when already matched
 
 
 @dataclass
 class CoaInput:
+    """One COA's header and results."""
+
     source: CoaSource
     results: list[ResultInput]
     id: int | None = None
     issuer_name: str | None = None
+    issuer_confidence: float = 1.0
+    expected_issuer: str | None = None  # the batch's factory, or the lab chosen for this COA
     product_name: str | None = None
     cas_number: str | None = None
     batch_number: str | None = None
     mfg_date: date | None = None
     test_date: date | None = None
-    expiry_date: date | None = None
+    expiry_date: date | None = None  # only full dates
+    # Dates as printed when not a full date.
+    mfg_date_as_printed: str | None = None
+    test_date_as_printed: str | None = None
+    expiry_date_as_printed: str | None = None
 
 
 @dataclass
 class BatchInput:
+    """A batch and its COAs."""
+
     batch_number: str
     coas: list[CoaInput]
 
 
 @dataclass
 class EngineConfig:
+    """Release policy settings."""
+
     require_lab_coa: bool = True
     default_tolerance_pct: float = 2.0
     low_confidence: float = 0.8
     expiry_warning_days: int = 30
 
 
-# ---- Outputs -----------------------------------------------------------------------------
-
-
 @dataclass
 class SourceReading:
+    """One COA's reading of a parameter."""
+
     source: CoaSource
     coa_id: int | None
     raw_value: str
     unit: str | None
-    value: float | None  # converted to the spec's unit, when numeric and convertible
+    value: float | None  # in the spec's unit, when convertible
     status: ParamStatus
     note: str | None = None
     confidence: float = 1.0
@@ -107,18 +128,22 @@ class SourceReading:
 
 @dataclass
 class ParameterCheck:
+    """A parameter's readings and combined status."""
+
     parameter_id: int
     name: str
     spec_text: str
     critical: bool
     status: ParamStatus
     readings: list[SourceReading]
-    discrepancy: str | None = None  # factory vs lab disagreement, explained
+    discrepancy: str | None = None
     note: str | None = None
 
 
 @dataclass
 class IdentityCheck:
+    """A product, grade, issuer, batch or date check."""
+
     code: str
     label: str
     status: CheckStatus
@@ -128,6 +153,8 @@ class IdentityCheck:
 
 @dataclass
 class Finding:
+    """A reason behind the decision."""
+
     severity: Severity
     code: str
     message: str
@@ -136,6 +163,8 @@ class Finding:
 
 @dataclass
 class UnmatchedResult:
+    """A COA row that matched no parameter."""
+
     source: CoaSource
     name_as_written: str
     raw_value: str
@@ -144,6 +173,8 @@ class UnmatchedResult:
 
 @dataclass
 class EngineResult:
+    """The engine's decision with all its evidence."""
+
     decision: Decision
     summary: str
     parameters: list[ParameterCheck]
@@ -152,4 +183,5 @@ class EngineResult:
     unmatched: list[UnmatchedResult]
 
     def to_dict(self) -> dict:
+        """Return the result as a plain dict for storage."""
         return asdict(self)

@@ -3,18 +3,28 @@ import type { OrderLineSummary, OrderSummary } from '@/types'
 
 defineProps<{ orders: OrderSummary[] }>()
 
+/** Label and tone for an order line's progress. */
 function lineState(line: OrderLineSummary): { label: string; tone: string } {
   if (line.ready) return { label: 'Ready to ship', tone: 'release' }
   if (line.batches === 0) return { label: 'No batch yet', tone: 'idle' }
   if (line.released_quantity > 0)
-    return { label: `${qty(line.released_quantity)} of ${qty(line.quantity)} ${line.unit} released`, tone: 'review' }
+    return {
+      label: `${qty(line.released_quantity)} of ${qty(line.quantity)} ${line.unit} released`,
+      tone: 'review',
+    }
   return { label: `${line.batches} batch${line.batches === 1 ? '' : 'es'} in QC`, tone: 'review' }
 }
 
+/** Format a date. */
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
+/** Format a quantity. */
 function qty(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
@@ -28,13 +38,20 @@ function qty(n: number): string {
 
     <article v-for="order in orders" :key="order.id" class="order">
       <header>
-        <h3>{{ order.po_number }}</h3>
+        <h3>
+          <RouterLink :to="`/orders/${order.id}`" class="po">{{ order.po_number }}</RouterLink>
+        </h3>
         <span class="customer">{{ order.customer }}</span>
         <span class="date">Ordered {{ formatDate(order.order_date) }}</span>
       </header>
 
       <table>
-        <caption class="visually-hidden">Lines on {{ order.po_number }}</caption>
+        <caption class="visually-hidden">
+          Lines on
+          {{
+            order.po_number
+          }}
+        </caption>
         <colgroup>
           <col style="width: 4.5rem" />
           <col style="width: 26%" />
@@ -55,7 +72,9 @@ function qty(n: number): string {
           <tr v-for="line in order.lines" :key="line.line_no">
             <td class="num">{{ line.line_no }}</td>
             <td>{{ line.product }}</td>
-            <td><span class="grade">{{ line.grade }}</span></td>
+            <td>
+              <span class="grade">{{ line.grade }}</span>
+            </td>
             <td class="num right">{{ qty(line.quantity) }} {{ line.unit }}</td>
             <td>
               <span :class="['state', `tone-${lineState(line).tone}`]">
@@ -97,6 +116,15 @@ h2 {
 
 h3 {
   font-size: var(--t-m);
+}
+
+.po {
+  color: inherit;
+  text-decoration: none;
+}
+
+.po:hover {
+  text-decoration: underline;
 }
 
 .customer {

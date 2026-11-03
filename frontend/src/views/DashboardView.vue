@@ -11,6 +11,7 @@ const auth = useAuthStore()
 const data = ref<Dashboard | null>(null)
 const error = ref<string | null>(null)
 
+/** Load the dashboard. */
 async function load() {
   error.value = null
   try {
@@ -36,6 +37,7 @@ const focus = computed<BatchStatus | undefined>(() => {
   }
 })
 
+/** A count with its noun. */
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`
 }
@@ -110,6 +112,7 @@ const showsPipeline = computed(() => auth.can('batches:view'))
 <style scoped>
 .dash {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.75rem;
 }
 

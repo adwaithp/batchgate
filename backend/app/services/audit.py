@@ -1,3 +1,5 @@
+"""Audit log writer."""
+
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog, User
@@ -12,7 +14,7 @@ def record(
     entity_id: int | None = None,
     **data,
 ) -> AuditLog:
-    """Append an audit entry. The caller owns the transaction (commits with its own change)."""
+    """Append an audit entry; the caller commits it with its own change."""
     entry = AuditLog(
         actor_id=actor.id if actor else None,
         action=action,

@@ -1,10 +1,7 @@
-"""Demo data: users for each role, fictional customers/suppliers, illustrative specs and orders.
+"""Demo data: users for each role, fictional companies, illustrative specs, orders and batches.
 
-All companies here are invented. Spec limits are illustrative values in the typical range for
-each product; they are not any real customer's specification.
-
-Run:  uv run python -m app.seed          (creates tables if missing, idempotent)
-      uv run python -m app.seed --reset  (drops everything first)
+uv run python -m app.seed          apply migrations, add demo data if missing
+uv run python -m app.seed --reset  drop everything and start fresh
 """
 
 import argparse
@@ -13,6 +10,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import migrations
 from app.core.config import get_settings
 from app.core.database import Base, SessionLocal, engine
 from app.core.security import hash_password
@@ -36,7 +34,7 @@ DEMO_USERS = [
         "email": "sara@batchgate.dev",
         "full_name": "Sara Thomas",
         "role": Role.SALES,
-        "description": "Read-only view of her customers' orders.",
+        "description": "Enters and follows her customers' orders. Can't change specs.",
         "customers": ["Ridgeway Industrial Supply"],
     },
     {
@@ -102,8 +100,18 @@ SUPPLIERS = [
 
 
 def _p(
-    name, rule, *, low=None, high=None, unit=None, text=None, aliases=(), method=None, critical=True
+    name,
+    rule,
+    *,
+    low=None,
+    high=None,
+    unit=None,
+    text=None,
+    aliases=(),
+    method=None,
+    critical=True,
 ):
+    """Build one spec parameter definition."""
     return {
         "name": name,
         "rule_type": rule,
@@ -189,7 +197,9 @@ SPECS = [
             ),
             _p("pH (neat)", RuleType.RANGE, low=9.5, high=11.0, aliases=["pH"]),
             _p("Specific gravity @ 25 °C", RuleType.RANGE, low=1.14, high=1.17, aliases=["SG"]),
-            _p("Appearance", RuleType.TEXT_MATCH, text="Clear, pale yellow liquid", critical=False),
+            _p(
+                "Appearance", RuleType.TEXT_MATCH, text="Clear, pale yellow liquid", critical=False
+            ),
         ],
     },
     {
@@ -214,7 +224,9 @@ SPECS = [
             ),
             _p("pH (neat)", RuleType.RANGE, low=9.0, high=11.0, aliases=["pH"]),
             _p("Specific gravity @ 25 °C", RuleType.RANGE, low=1.07, high=1.10, aliases=["SG"]),
-            _p("Appearance", RuleType.TEXT_MATCH, text="Clear, pale yellow liquid", critical=False),
+            _p(
+                "Appearance", RuleType.TEXT_MATCH, text="Clear, pale yellow liquid", critical=False
+            ),
         ],
     },
     {
@@ -232,7 +244,9 @@ SPECS = [
                 method="HPLC",
             ),
             _p("Loss on drying", RuleType.MAX, high=0.5, unit="%", aliases=["LOD", "Moisture"]),
-            _p("Heavy metals (as Pb)", RuleType.MAX, high=10, unit="ppm", aliases=["Heavy metals"]),
+            _p(
+                "Heavy metals (as Pb)", RuleType.MAX, high=10, unit="ppm", aliases=["Heavy metals"]
+            ),
             _p(
                 "Sulphated ash",
                 RuleType.MAX,
@@ -260,8 +274,7 @@ SPECS = [
     },
 ]
 
-# How far factory and lab results may differ before a person must look. Unlisted parameters
-# use the engine default (2 % relative). Small values need an absolute tolerance instead.
+# Allowed factory-vs-lab difference; unlisted tests use the engine default.
 TOLERANCES = {
     "Free acid (as HCl)": {"tolerance_abs": 0.05},
     "Ferrous iron (Fe2+)": {"tolerance_abs": 0.03},
@@ -269,7 +282,7 @@ TOLERANCES = {
     "Specific gravity @ 25 °C": {"tolerance_abs": 0.005},
     "Free MEA": {"tolerance_abs": 0.2},
     "pH (neat)": {"tolerance_abs": 0.2},
-    "Assay (HPLC)": {"tolerance_pct": 1.0},  # purity assays are held to a tighter match
+    "Assay (HPLC)": {"tolerance_pct": 1.0},  # purity assays need a tighter match
     "Loss on drying": {"tolerance_abs": 0.1},
     "Heavy metals (as Pb)": {"tolerance_abs": 2},
     "Sulphated ash": {"tolerance_abs": 0.03},
@@ -278,7 +291,7 @@ TOLERANCES = {
 
 ORDERS = [
     {
-        # The tricky one: the same product on two lines, at two different grades.
+        # The same product on two lines at two grades.
         "po_number": "PO-1042",
         "customer": "Ridgeway Industrial Supply",
         "order_date": date(2026, 10, 20),
@@ -298,6 +311,7 @@ ORDERS = [
 
 
 def _get_or_create(db: Session, model, lookup: dict, **values):
+    """Return the row matching `lookup`, creating it with `values` if missing."""
     obj = db.scalar(select(model).filter_by(**lookup))
     if obj is None:
         obj = model(**lookup, **values)
@@ -307,6 +321,7 @@ def _get_or_create(db: Session, model, lookup: dict, **values):
 
 
 def seed(db: Session, *, demo_batches: bool = True) -> None:
+    """Add the demo users, catalog, specs, orders, batches and knowledge."""
     settings = get_settings()
 
     customers = {
@@ -394,18 +409,20 @@ def seed(db: Session, *, demo_batches: bool = True) -> None:
     db.commit()
     if demo_batches:
         seed_batches(db)
+        from app.seed_knowledge import seed_knowledge
+
+        seed_knowledge(db)
 
 
-# ---- Demo batches ------------------------------------------------------------------------
-# Created through the real workflow (ingest -> values -> check), so the engine decides each one.
+# Created through the real workflow so the engine decides each one.
 
-_FC_HEADER = dict(
-    product_name="Ferric Chloride Solution 40%",
-    cas_number="7705-08-0",
-    mfg_date=date(2026, 10, 24),
-    test_date=date(2026, 10, 26),
-    expiry_date=date(2028, 10, 23),
-)
+_FC_HEADER = {
+    "product_name": "Ferric Chloride Solution 40%",
+    "cas_number": "7705-08-0",
+    "mfg_date": date(2026, 10, 24),
+    "test_date": date(2026, 10, 26),
+    "expiry_date": date(2028, 10, 23),
+}
 _FC_ROWS = [
     ("FeCl3 content", "40.6", "%"),
     ("Total iron (as Fe)", "13.9", "%"),
@@ -416,13 +433,13 @@ _FC_ROWS = [
     ("Appearance", "Dark brown liquid", None),
 ]
 
-_MT78_HEADER = dict(
-    product_name="MEA Triazine 78%",
-    cas_number="4719-04-4",
-    mfg_date=date(2026, 10, 18),
-    test_date=date(2026, 10, 20),
-    expiry_date=date(2028, 10, 17),
-)
+_MT78_HEADER = {
+    "product_name": "MEA Triazine 78%",
+    "cas_number": "4719-04-4",
+    "mfg_date": date(2026, 10, 18),
+    "test_date": date(2026, 10, 20),
+    "expiry_date": date(2028, 10, 17),
+}
 _MT78_ROWS = [
     ("Active content", "78.9", "%"),
     ("Free MEA", "1.1", "%"),
@@ -431,13 +448,13 @@ _MT78_ROWS = [
     ("Appearance", "Clear, pale yellow liquid", None),
 ]
 
-_MT40_HEADER = dict(
-    product_name="Triazine H2S scavenger (40% active)",
-    cas_number="4719-04-4",
-    mfg_date=date(2026, 10, 28),
-    test_date=date(2026, 10, 30),
-    expiry_date=date(2028, 10, 27),
-)
+_MT40_HEADER = {
+    "product_name": "Triazine H2S scavenger (40% active)",
+    "cas_number": "4719-04-4",
+    "mfg_date": date(2026, 10, 28),
+    "test_date": date(2026, 10, 30),
+    "expiry_date": date(2028, 10, 27),
+}
 _MT40_ROWS = [
     ("Triazine content", "41.8", "%"),
     ("Free MEA", "0.6", "%"),
@@ -446,13 +463,13 @@ _MT40_ROWS = [
     ("Appearance", "Clear pale yellow liquid", None),
 ]
 
-_PO_HEADER = dict(
-    product_name="Piroctone Olamine",
-    cas_number="68890-66-4",
-    mfg_date=date(2026, 10, 21),
-    test_date=date(2026, 10, 23),
-    expiry_date=date(2028, 10, 20),
-)
+_PO_HEADER = {
+    "product_name": "Piroctone Olamine",
+    "cas_number": "68890-66-4",
+    "mfg_date": date(2026, 10, 21),
+    "test_date": date(2026, 10, 23),
+    "expiry_date": date(2028, 10, 20),
+}
 _PO_ROWS = [
     ("Assay (HPLC)", "99.6", "%"),
     ("Loss on drying", "0.21", "%"),
@@ -465,10 +482,12 @@ _PO_ROWS = [
 
 
 def _swap(rows, name, value):
+    """Return result rows with one test's value replaced."""
     return [(n, value if n == name else v, u) for n, v, u in rows]
 
 
 def seed_batches(db: Session) -> None:
+    """Create the demo batches through the real workflow."""
     from app.models import Batch
     from app.models.enums import CoaSource
     from app.services import batches as svc
@@ -483,6 +502,7 @@ def seed_batches(db: Session) -> None:
     lab = supplier["Northbridge Analytical Labs"]
 
     def make(batch_number, product_name, factory, line, qty, coas):
+        """Register a batch and save its COAs, letting the engine decide."""
         batch = svc.get_or_create_batch(
             db,
             batch_number=batch_number,
@@ -504,15 +524,19 @@ def seed_batches(db: Session) -> None:
             svc.save_coa_data(
                 db,
                 coa,
-                svc.CoaHeader(batch_number=batch_number, **header),
+                svc.CoaHeader(
+                    batch_number=batch_number,
+                    issuer_name=factory if source == CoaSource.FACTORY else lab.name,
+                    **header,
+                ),
                 [svc.CoaRow(name, value, unit) for name, value, unit in rows],
                 actor=analyst,
             )
         return batch
 
-    F, L = CoaSource.FACTORY, CoaSource.LAB
+    from_factory, from_lab = CoaSource.FACTORY, CoaSource.LAB
 
-    # Held: the lab finds insoluble matter above the limit (the batch on the login page).
+    # Hold: the lab finds insoluble matter above the limit.
     make(
         "FC-2611-07",
         "Ferric Chloride",
@@ -520,17 +544,17 @@ def seed_batches(db: Session) -> None:
         ("PO-1042", 1),
         10,
         [
-            (F, _FC_HEADER, _FC_ROWS),
+            (from_factory, _FC_HEADER, _FC_ROWS),
             (
-                L,
+                from_lab,
                 {**_FC_HEADER, "product_name": "Ferric chloride solution"},
                 _swap(_FC_ROWS, "Insoluble matter", "0.14"),
             ),
         ],
     )
-    # Registered, waiting for its COAs.
+    # Registered, awaiting its COAs.
     make("FC-2611-12", "Ferric Chloride", "Kutch Coastal Chemicals", ("PO-1042", 1), 10, [])
-    # Clean on both COAs: waiting for a QC manager to approve release.
+    # Clean on both COAs: awaiting a QC manager's approval.
     make(
         "MT-2610-31",
         "MEA Triazine",
@@ -538,11 +562,11 @@ def seed_batches(db: Session) -> None:
         ("PO-1042", 2),
         10,
         [
-            (F, _MT78_HEADER, _MT78_ROWS),
-            (L, _MT78_HEADER, _swap(_MT78_ROWS, "Active content", "78.6")),
+            (from_factory, _MT78_HEADER, _MT78_ROWS),
+            (from_lab, _MT78_HEADER, _swap(_MT78_ROWS, "Active content", "78.6")),
         ],
     )
-    # Arrived without an order line: fits the 40 % grade (line 3), fails the 78 % grade (line 2).
+    # No order line: fits the 40 % grade (line 3), fails the 78 % grade (line 2).
     make(
         "MT-2611-04",
         "MEA Triazine",
@@ -550,23 +574,27 @@ def seed_batches(db: Session) -> None:
         None,
         10,
         [
-            (F, _MT40_HEADER, _MT40_ROWS),
-            (L, _MT40_HEADER, _swap(_MT40_ROWS, "Triazine content", "41.5")),
+            (from_factory, _MT40_HEADER, _MT40_ROWS),
+            (from_lab, _MT40_HEADER, _swap(_MT40_ROWS, "Triazine content", "41.5")),
         ],
     )
-    # Both COAs pass, but factory and lab disagree on assay by more than 1 %: a person looks.
+    # Review: factory and lab assay differ by more than 1 %.
     make(
         "PO-2611-A",
         "Piroctone Olamine",
         "Dahej Specialty Organics",
         ("PO-2001", 1),
         0.5,
-        [(F, _PO_HEADER, _PO_ROWS), (L, _PO_HEADER, _swap(_PO_ROWS, "Assay (HPLC)", "98.3"))],
+        [
+            (from_factory, _PO_HEADER, _PO_ROWS),
+            (from_lab, _PO_HEADER, _swap(_PO_ROWS, "Assay (HPLC)", "98.3")),
+        ],
     )
     db.commit()
 
 
 def main() -> None:
+    """Apply migrations and seed; with --reset, drop everything first."""
     parser = argparse.ArgumentParser(description="Seed BatchGate demo data")
     parser.add_argument("--reset", action="store_true", help="drop all tables first")
     args = parser.parse_args()
@@ -575,7 +603,9 @@ def main() -> None:
 
     if args.reset:
         Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
+    migrations.upgrade(engine)
     with SessionLocal() as db:
         seed(db)
     print("Seeded demo data. Demo password:", get_settings().demo_password)

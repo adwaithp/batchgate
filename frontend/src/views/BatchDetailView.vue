@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 import { api } from '@/api/client'
 import ActionPanel from '@/components/batch/ActionPanel.vue'
+import CopilotPanel from '@/components/batch/CopilotPanel.vue'
 import BatchTimeline from '@/components/batch/BatchTimeline.vue'
 import CoaCard from '@/components/batch/CoaCard.vue'
 import LineSuggestions from '@/components/batch/LineSuggestions.vue'
@@ -20,6 +21,7 @@ const batch = ref<BatchDetail | null>(null)
 const options = ref<CatalogOptions | null>(null)
 const error = ref<string | null>(null)
 
+/** Load the batch. */
 async function load() {
   error.value = null
   try {
@@ -41,9 +43,12 @@ onMounted(async () => {
 })
 watch(() => props.id, load)
 
-const closed = computed(() => batch.value?.status === 'released' || batch.value?.status === 'rejected')
+const closed = computed(
+  () => batch.value?.status === 'released' || batch.value?.status === 'rejected',
+)
 const spec = computed(() => batch.value?.line_detail?.spec ?? null)
 
+/** The current COA from a source. */
 function activeCoa(source: CoaSource) {
   return batch.value?.coas.find((c) => c.source === source && !c.superseded)
 }
@@ -54,8 +59,28 @@ const identityLabels = computed(() =>
   [...new Set(identity.value.map((c) => c.label.toLowerCase()))].join(', '),
 )
 const showIdentity = ref(false)
+// Only claim what was actually checked.
+const identitySummary = computed(() => {
+  const passed = new Set(identity.value.filter((c) => c.status === 'pass').map((c) => c.code))
+  const parts = [
+    passed.has('product') || passed.has('cas') ? 'Right product' : null,
+    passed.has('grade') ? 'right grade' : null,
+    passed.has('batch_number') ? 'right batch' : null,
+    passed.has('issuer') ? 'from the right issuer' : null,
+    passed.has('expiry') ? 'in date' : null,
+  ].filter(Boolean)
+  return parts.length ? `${parts.join(', ')} on every COA` : 'Identity checks passed'
+})
+// Copilot: for review and hold batches, for people who handle them.
+const showCopilot = computed(
+  () =>
+    !!batch.value?.verdict &&
+    auth.can('check:run') &&
+    ['pending_review', 'on_hold'].includes(batch.value.status),
+)
 const unmatched = computed(() => batch.value?.verdict?.details.unmatched ?? [])
 
+/** Show the batch returned by a child component. */
 function onUpdated(detail: BatchDetail) {
   batch.value = detail
 }
@@ -76,9 +101,17 @@ function onUpdated(detail: BatchDetail) {
           {{ batch.factory?.name }} ({{ batch.factory?.city }}, {{ batch.factory?.country }})
         </p>
         <p v-if="batch.line_detail" class="meta">
-          For {{ batch.line_detail.po_number }}, line {{ batch.line_detail.line_no }}:
+          For
+          <RouterLink :to="`/orders/${batch.line_detail.order_id}`">{{
+            batch.line_detail.po_number
+          }}</RouterLink
+          >, line {{ batch.line_detail.line_no }}:
           <strong>{{ batch.line_detail.grade }}</strong> for {{ batch.line_detail.customer }},
-          checked against spec v{{ batch.line_detail.spec.version }}
+          checked against
+          <RouterLink v-if="auth.can('specs:view')" :to="`/specs/${batch.line_detail.spec.id}`">
+            spec v{{ batch.line_detail.spec.version }}</RouterLink
+          >
+          <template v-else>spec v{{ batch.line_detail.spec.version }}</template>
         </p>
       </div>
     </header>
@@ -87,6 +120,7 @@ function onUpdated(detail: BatchDetail) {
       <div class="main">
         <LineSuggestions v-if="!batch.line" :batch="batch" @updated="onUpdated" />
         <VerdictPanel v-if="batch.line || batch.verdict" :batch="batch" />
+        <CopilotPanel v-if="showCopilot" :key="batch.id" :batch="batch" />
 
         <ParameterTable
           v-if="spec || batch.verdict"
@@ -97,7 +131,7 @@ function onUpdated(detail: BatchDetail) {
         <section v-if="identity.length" aria-labelledby="identity-title">
           <h2 id="identity-title">Identity and dates</h2>
           <p v-if="!identityProblems.length" class="id-ok">
-            Right product, right batch, in date on every COA
+            {{ identitySummary }}
             <span class="muted">({{ identityLabels }})</span>
           </p>
           <ul v-if="identityProblems.length || showIdentity" class="identity">
@@ -106,7 +140,12 @@ function onUpdated(detail: BatchDetail) {
               :key="i"
               :class="`id-${c.status}`"
             >
-              <span class="id-label">{{ c.label }}<span v-if="c.source"> · {{ c.source === 'lab' ? 'lab COA' : 'factory COA' }}</span></span>
+              <span class="id-label"
+                >{{ c.label
+                }}<span v-if="c.source">
+                  · {{ c.source === 'lab' ? 'lab COA' : 'factory COA' }}</span
+                ></span
+              >
               {{ c.message }}
             </li>
           </ul>
@@ -133,7 +172,10 @@ function onUpdated(detail: BatchDetail) {
           </div>
           <p v-if="unmatched.length" class="unmatched">
             Also on the COAs, not in the spec:
-            <span v-for="(u, i) in unmatched" :key="i">{{ u.name_as_written }} {{ u.raw_value }}{{ u.unit ? ` ${u.unit}` : '' }}<template v-if="i < unmatched.length - 1">; </template></span>
+            <span v-for="(u, i) in unmatched" :key="i"
+              >{{ u.name_as_written }} {{ u.raw_value }}{{ u.unit ? ` ${u.unit}` : ''
+              }}<template v-if="i < unmatched.length - 1">; </template></span
+            >
           </p>
         </section>
       </div>
@@ -154,6 +196,7 @@ function onUpdated(detail: BatchDetail) {
 <style scoped>
 .page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
 }
 
@@ -194,6 +237,7 @@ h1 {
 .main,
 .side {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
 }
 
@@ -288,7 +332,7 @@ h2 {
 
 @media (max-width: 1100px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .side {
     position: static;

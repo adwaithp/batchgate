@@ -24,7 +24,12 @@ const entries = computed<Entry[]>(() => {
       who: `${a.actor} (${a.actor_role})`,
       what: ACTION[a.action].past,
       note: a.note,
-      tone: a.action === 'approve_release' ? 'release' : a.action === 'hold' || a.action === 'reject' ? 'hold' : 'approval',
+      tone:
+        a.action === 'approve_release'
+          ? 'release'
+          : a.action === 'hold' || a.action === 'reject'
+            ? 'hold'
+            : 'approval',
     }))
   const checks: Entry[] = props.batch.history.map((v) => ({
     key: `v${v.id}`,
@@ -45,7 +50,9 @@ const entries = computed<Entry[]>(() => {
     <ol v-else class="timeline">
       <li v-for="e in entries" :key="e.key" :class="`tone-${e.tone}`">
         <span class="when">{{ formatDateTime(e.at) }}</span>
-        <p><strong>{{ e.who }}</strong> {{ e.what }}</p>
+        <p>
+          <strong>{{ e.who }}</strong> {{ e.what }}
+        </p>
         <p v-if="e.note" class="note">{{ e.note }}</p>
       </li>
     </ol>

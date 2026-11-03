@@ -1,4 +1,4 @@
-"""Who we sell to, what we sell, who makes and tests it, and what "good" means (specs)."""
+"""Customers, products, suppliers and versioned specs."""
 
 from datetime import date
 
@@ -11,6 +11,8 @@ from app.models.mixins import TimestampMixin, str_enum
 
 
 class Customer(TimestampMixin, Base):
+    """A company that orders products."""
+
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -20,6 +22,8 @@ class Customer(TimestampMixin, Base):
 
 
 class Product(TimestampMixin, Base):
+    """A chemical product, identified by name and CAS number."""
+
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -30,7 +34,7 @@ class Product(TimestampMixin, Base):
 
 
 class Supplier(TimestampMixin, Base):
-    """A partner factory that makes batches, or an independent lab that tests them."""
+    """A partner factory that makes batches or an independent lab."""
 
     __tablename__ = "suppliers"
 
@@ -42,11 +46,7 @@ class Supplier(TimestampMixin, Base):
 
 
 class Spec(TimestampMixin, Base):
-    """What a specific customer requires for a specific product grade.
-
-    Specs are versioned: editing an active spec creates a new version and marks the old one
-    superseded, so every past verdict still points at the exact rules it was checked against.
-    """
+    """A customer's requirements for one product grade; versioned, never edited."""
 
     __tablename__ = "specs"
     __table_args__ = (UniqueConstraint("customer_id", "product_id", "grade", "version"),)
@@ -72,7 +72,7 @@ class Spec(TimestampMixin, Base):
 
 
 class SpecParameter(Base):
-    """One line of a spec sheet, e.g. "Free acid (as HCl) — max 0.5 %"."""
+    """One test on a spec, e.g. free acid (as HCl) max 0.5 %."""
 
     __tablename__ = "spec_parameters"
 
@@ -80,7 +80,7 @@ class SpecParameter(Base):
     spec_id: Mapped[int] = mapped_column(ForeignKey("specs.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(default=0)
     name: Mapped[str] = mapped_column(String(128))
-    # Other names suppliers use for the same test ("Fe", "Iron as Fe", "Fe content").
+    # Other names suppliers use for the same test.
     aliases: Mapped[list[str]] = mapped_column(JSON, default=list)
     rule_type: Mapped[RuleType] = mapped_column(str_enum(RuleType))
     low: Mapped[float | None] = mapped_column(Float)
@@ -88,9 +88,9 @@ class SpecParameter(Base):
     expected_text: Mapped[str | None] = mapped_column(String(255))
     unit: Mapped[str | None] = mapped_column(String(32))
     method: Mapped[str | None] = mapped_column(String(128))
-    # Critical parameters must be present on the COA; a missing one blocks release.
+    # A missing critical parameter blocks release.
     critical: Mapped[bool] = mapped_column(default=True)
-    # How far factory and lab may differ before a person must look. None = engine default (2 %).
+    # Allowed factory-vs-lab difference; None uses the engine default.
     tolerance_pct: Mapped[float | None] = mapped_column(Float)
     tolerance_abs: Mapped[float | None] = mapped_column(Float)
 

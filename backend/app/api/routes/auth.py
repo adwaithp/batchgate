@@ -1,3 +1,5 @@
+"""Authentication API: access tokens, the current user and demo accounts."""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,6 +19,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def to_user_out(user: User) -> UserOut:
+    """Build the API view of a user, including their permissions."""
     return UserOut(
         id=user.id,
         email=user.email,
@@ -30,7 +33,7 @@ def to_user_out(user: User) -> UserOut:
 
 @router.post("/token", response_model=Token)
 def login(db: DbSession, form: Annotated[OAuth2PasswordRequestForm, Depends()]) -> Token:
-    """OAuth2 password flow. `username` is the user's email."""
+    """Issue an access token (OAuth2 password flow; the username is the email)."""
     user = db.scalar(select(User).where(User.email == form.username.strip().lower()))
     if (
         user is None
@@ -51,12 +54,13 @@ def login(db: DbSession, form: Annotated[OAuth2PasswordRequestForm, Depends()]) 
 
 @router.get("/me", response_model=UserOut)
 def me(user: CurrentUser) -> UserOut:
+    """Return the signed-in user."""
     return to_user_out(user)
 
 
 @router.get("/demo-accounts", response_model=DemoAccounts)
 def demo_accounts(db: DbSession) -> DemoAccounts:
-    """One-click accounts for the login page. Disabled outside demo mode."""
+    """List the one-click demo accounts (disabled outside demo mode)."""
     settings = get_settings()
     if not settings.demo_mode:
         return DemoAccounts(enabled=False)

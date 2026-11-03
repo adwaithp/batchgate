@@ -1,3 +1,5 @@
+"""Batch API: batches, COA uploads, reading progress, decisions and the copilot."""
+
 import asyncio
 import json
 from collections.abc import AsyncIterator
@@ -51,6 +53,8 @@ from app.schemas.batches import (
     VerdictBrief,
     VerdictOut,
 )
+from app.schemas.copilot import CopilotOut, CopilotSource
+from app.services import audit, copilot
 from app.services import batches as svc
 from app.services.extraction import events
 from app.services.rules.engine import spec_text
@@ -62,10 +66,8 @@ Viewer = Annotated[User, Depends(require(Permission.VIEW_BATCHES))]
 Uploader = Annotated[User, Depends(require(Permission.UPLOAD_COA))]
 
 
-# ---- Mapping -----------------------------------------------------------------------------
-
-
 def _line_out(line: OrderLine) -> LineOut:
+    """Map an order line to its API view."""
     return LineOut(
         id=line.id,
         order_id=line.order_id,
@@ -81,6 +83,7 @@ def _line_out(line: OrderLine) -> LineOut:
 
 
 def _spec_out(line: OrderLine) -> SpecOut:
+    """Map a spec and its parameters to their API view."""
     spec = line.spec
     return SpecOut(
         id=spec.id,
@@ -109,6 +112,7 @@ def _spec_out(line: OrderLine) -> SpecOut:
 
 
 def _summary(batch: Batch) -> BatchSummary:
+    """Map a batch to its list-row view."""
     verdict = svc.latest_verdict(batch)
     line = batch.line
     return BatchSummary(
@@ -136,6 +140,7 @@ def _summary(batch: Batch) -> BatchSummary:
 
 
 def _coa_out(db: DbSession, coa: COADocument) -> CoaOut:
+    """Map a COA document and its result rows to their API view."""
     uploader = db.get(User, coa.uploaded_by_id) if coa.uploaded_by_id else None
     checker = db.get(User, coa.checked_by_id) if coa.checked_by_id else None
     low = get_settings().low_confidence_threshold
@@ -154,6 +159,9 @@ def _coa_out(db: DbSession, coa: COADocument) -> CoaOut:
         extraction_error=coa.extraction_error,
         warnings=(coa.raw_extraction or {}).get("warnings", []),
         checked_by=checker.full_name if checker else None,
+        issuer_name=coa.issuer_name,
+        issuer_confidence=coa.issuer_confidence,
+        issuer_needs_check=coa.issuer_name is not None and coa.issuer_confidence < low,
         product_name=coa.product_name,
         cas_number=coa.cas_number,
         batch_number=coa.batch_number,
@@ -161,6 +169,9 @@ def _coa_out(db: DbSession, coa: COADocument) -> CoaOut:
         mfg_date=coa.mfg_date,
         test_date=coa.test_date,
         expiry_date=coa.expiry_date,
+        mfg_date_as_printed=coa.mfg_date_as_printed,
+        test_date_as_printed=coa.test_date_as_printed,
+        expiry_date_as_printed=coa.expiry_date_as_printed,
         results=[
             CoaResultOut(
                 id=r.id,
@@ -178,6 +189,7 @@ def _coa_out(db: DbSession, coa: COADocument) -> CoaOut:
 
 
 def _detail(db: DbSession, batch: Batch, user: User) -> BatchDetail:
+    """Build the full batch view, including what `user` may do next."""
     verdict = svc.latest_verdict(batch)
     suggestions = []
     if batch.line is None:
@@ -225,17 +237,16 @@ def _detail(db: DbSession, batch: Batch, user: User) -> BatchDetail:
 
 
 def _get_batch(db: DbSession, batch_id: int) -> Batch:
+    """Load a batch or raise 404."""
     batch = db.get(Batch, batch_id)
     if batch is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Batch not found")
     return batch
 
 
-# ---- Routes ------------------------------------------------------------------------------
-
-
 @router.get("/catalog/options", response_model=CatalogOptions)
 def catalog_options(db: DbSession, _: Viewer) -> CatalogOptions:
+    """Products, factories, labs and open order lines for the batch forms."""
     suppliers = list(db.scalars(select(Supplier).order_by(Supplier.name)))
     lines = db.scalars(
         select(OrderLine)
@@ -274,6 +285,7 @@ def list_batches(
     status_filter: Annotated[list[BatchStatus] | None, Query(alias="status")] = None,
     q: str | None = None,
 ) -> list[BatchSummary]:
+    """List batches, most recently updated first, filtered by status or search text."""
     query = select(Batch).order_by(Batch.updated_at.desc(), Batch.id.desc())
     if status_filter:
         query = query.where(Batch.status.in_(status_filter))
@@ -287,6 +299,7 @@ def list_batches(
 
 @router.post("/batches", response_model=BatchDetail, status_code=status.HTTP_201_CREATED)
 def create_batch(db: DbSession, user: Uploader, body: BatchCreate) -> BatchDetail:
+    """Register a batch."""
     existing = db.scalar(
         select(Batch).where(
             Batch.factory_id == body.factory_id, Batch.batch_number == body.batch_number.strip()
@@ -294,7 +307,8 @@ def create_batch(db: DbSession, user: Uploader, body: BatchCreate) -> BatchDetai
     )
     if existing:
         raise svc.WorkflowError(
-            f"Batch {existing.batch_number} from this factory already exists (#{existing.id}).", 409
+            f"Batch {existing.batch_number} from this factory already exists (#{existing.id}).",
+            409,
         )
     batch = svc.get_or_create_batch(
         db,
@@ -311,28 +325,29 @@ def create_batch(db: DbSession, user: Uploader, body: BatchCreate) -> BatchDetai
 
 @router.get("/batches/{batch_id}", response_model=BatchDetail)
 def get_batch(db: DbSession, user: Viewer, batch_id: int) -> BatchDetail:
+    """Return one batch in full."""
     return _detail(db, _get_batch(db, batch_id), user)
 
 
 @router.post("/batches/{batch_id}/actions", response_model=BatchDetail)
 def batch_action(db: DbSession, user: Viewer, batch_id: int, body: BatchActionIn) -> BatchDetail:
+    """Apply a person's decision to a batch."""
     batch = _get_batch(db, batch_id)
     svc.apply_action(db, batch, body.action, actor=user, note=body.note, line_id=body.line_id)
     db.commit()
     return _detail(db, batch, user)
 
 
-# ---- COA reading progress (server-sent events) -------------------------------------------
-
 STREAM_SECONDS = 180  # after this the browser is told to check back later
 
 
 def _sse(event: dict) -> str:
+    """Format one server-sent event."""
     return f"data: {json.dumps(event)}\n\n"
 
 
 def _reading(coa: COADocument) -> bool:
-    """Is the worker expected to read this COA?"""
+    """Return True when the worker is expected to read this COA."""
     return (
         coa.extraction_status == ExtractionStatus.PENDING
         and coa.storage_path is not None
@@ -341,6 +356,7 @@ def _reading(coa: COADocument) -> bool:
 
 
 async def _relay(first: list[dict], sub: events.Subscription | None) -> AsyncIterator[str]:
+    """Relay reading progress from Redis until a final event or the timeout."""
     try:
         for event in first:
             yield _sse(event)
@@ -362,24 +378,55 @@ async def _relay(first: list[dict], sub: events.Subscription | None) -> AsyncIte
             await sub.close()
 
 
+POLL_SECONDS = 2.0
+
+
+async def _poll_until_read(db: DbSession, coa_id: int, first: list[dict]) -> AsyncIterator[str]:
+    """Follow a reading by polling the database (used without Redis)."""
+    for event in first:
+        yield _sse(event)
+    yield _sse(events.READING)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + STREAM_SECONDS
+    while loop.time() < deadline:
+        db.expire_all()
+        coa = db.get(COADocument, coa_id)
+        if coa is None or not _reading(coa):
+            yield _sse(events.final_event(coa) if coa else events.MANUAL)
+            return
+        await asyncio.sleep(POLL_SECONDS)
+        yield ": still reading\n\n"
+    yield _sse(events.WAITING)
+
+
 async def _coa_stream(
     db: DbSession, coa: COADocument, first: list[dict], status_code: int = 200
 ) -> StreamingResponse:
-    """Stream a COA's reading progress. Every stream ends with done, failed, manual or waiting."""
+    """Stream a COA's reading progress; always ends with a final event."""
     sub = None
     if not _reading(coa):
         last = events.final_event(coa)
     else:
         try:
-            sub = await events.subscribe(coa.id)  # before looking again, so nothing is missed
-        except RedisError:
-            last = events.WAITING
+            if get_settings().extraction_mode == "inline":
+                raise RedisError("inline mode: no queue to follow")
+            sub = await events.subscribe(
+                coa.id
+            )  # subscribe before re-checking the COA so no event is missed
+        except (RedisError, OSError):
+            # Without Redis the API reads COAs itself; watch the database instead.
+            return StreamingResponse(
+                _poll_until_read(db, coa.id, first),
+                status_code=status_code,
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
         else:
             db.refresh(coa)
             if _reading(coa):
                 last = await sub.last()
                 if last is None or last["stage"] in events.FINAL:
-                    last = events.QUEUED  # a final event for a pending COA is stale (id reused)
+                    last = events.QUEUED  # a final event for a pending COA is stale
             else:
                 last = events.final_event(coa)
     return StreamingResponse(
@@ -399,11 +446,10 @@ async def upload_coa(
     issuer_id: Annotated[int | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
 ) -> StreamingResponse:
-    """Attach a COA to a batch, then stream Claude reading it (server-sent events).
+    """Attach a COA to a batch and stream its reading as server-sent events.
 
-    Without a file, it creates an entry to type values into. Events: `received` (with the
-    batch), `queued` / `reading`, then `done`, `failed`, `manual` or `waiting`. A browser that
-    drops off can follow along again at GET /coas/{id}/events.
+    Without a file it creates an entry for typing values in. Events: `received`, `queued` or
+    `reading`, then `done`, `failed`, `manual` or `waiting`.
     """
     batch = _get_batch(db, batch_id)
     incoming = None
@@ -418,24 +464,52 @@ async def upload_coa(
     )
     db.commit()
 
-    if _reading(coa):
-        try:
-            await worker.enqueue_extraction(coa.id)
-        except (RedisError, OSError):
-            coa.extraction_status = ExtractionStatus.FAILED
-            coa.extraction_error = "The COA reader isn't running. Enter the values by hand."
-            db.commit()
     received = {
         "stage": "received",
         "coa_id": coa.id,
         "batch": _detail(db, batch, user).model_dump(mode="json"),
     }
+    if _reading(coa):
+        mode = get_settings().extraction_mode
+        if mode == "inline":
+            return _read_inline(db, coa, received)
+        try:
+            await worker.enqueue_extraction(coa.id)
+        except (RedisError, OSError):
+            if mode == "auto":  # no Redis: read it here instead
+                return _read_inline(db, coa, received)
+            coa.extraction_status = ExtractionStatus.FAILED
+            coa.extraction_error = "The COA reader isn't running. Enter the values by hand."
+            db.commit()
     return await _coa_stream(db, coa, [received], status_code=201)
+
+
+def _read_inline(db: DbSession, coa: COADocument, received: dict) -> StreamingResponse:
+    """Read the COA inside this request, streaming the worker's events."""
+
+    async def stream() -> AsyncIterator[str]:
+        """Yield progress events while the reading runs in a thread."""
+        yield _sse(received)
+        yield _sse(events.READING)
+        task = asyncio.create_task(asyncio.to_thread(worker.extract_now, coa.id))
+        while not task.done():
+            await asyncio.wait({task}, timeout=15)
+            if not task.done():
+                yield ": still reading\n\n"
+        db.expire_all()
+        yield _sse(events.final_event(db.get(COADocument, coa.id)))
+
+    return StreamingResponse(
+        stream(),
+        status_code=201,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/coas/{coa_id}/events", response_class=StreamingResponse)
 async def coa_events(db: DbSession, _: Viewer, coa_id: int) -> StreamingResponse:
-    """Follow a COA being read (server-sent events), e.g. after reloading the page."""
+    """Re-attach to a COA's reading progress, e.g. after a page reload."""
     coa = db.get(COADocument, coa_id)
     if coa is None or coa.batch is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "COA not found")
@@ -444,6 +518,7 @@ async def coa_events(db: DbSession, _: Viewer, coa_id: int) -> StreamingResponse
 
 @router.put("/coas/{coa_id}/data", response_model=BatchDetail)
 def save_coa_data(db: DbSession, user: Uploader, coa_id: int, body: CoaDataIn) -> BatchDetail:
+    """Save COA values typed or corrected by a person and re-check."""
     coa = db.get(COADocument, coa_id)
     if coa is None or coa.batch is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "COA not found")
@@ -456,6 +531,7 @@ def save_coa_data(db: DbSession, user: Uploader, coa_id: int, body: CoaDataIn) -
 
 @router.get("/coas/{coa_id}/file")
 def coa_file(db: DbSession, _: Viewer, coa_id: int) -> FileResponse:
+    """Serve the uploaded COA file."""
     coa = db.get(COADocument, coa_id)
     if coa is None or not coa.storage_path or not Path(coa.storage_path).exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No file for this COA")
@@ -464,4 +540,36 @@ def coa_file(db: DbSession, _: Viewer, coa_id: int) -> FileResponse:
         media_type=coa.content_type or "application/octet-stream",
         filename=coa.original_filename,
         content_disposition_type="inline",
+    )
+
+
+Checker = Annotated[User, Depends(require(Permission.RUN_CHECK))]
+
+
+@router.post("/batches/{batch_id}/copilot", response_model=CopilotOut)
+def batch_copilot(db: DbSession, user: Checker, batch_id: int) -> CopilotOut:
+    """Have Claude explain why the batch needs a person (changes nothing)."""
+    batch = _get_batch(db, batch_id)
+    try:
+        result = copilot.review_batch(db, batch)
+    except copilot.CopilotError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
+    audit.record(
+        db,
+        actor=user,
+        action="copilot_brief",
+        entity_type="batch",
+        entity_id=batch.id,
+        model=result.model,
+        looked_at=result.looked_at,
+        email_to=result.brief.email.to if result.brief.email else None,
+        cited=[src.ref for src in result.sources],
+    )
+    db.commit()
+    return CopilotOut(
+        **result.brief.model_dump(exclude={"email", "sources"}),
+        email=result.brief.email,
+        sources=[CopilotSource(**vars(src)) for src in result.sources],
+        looked_at=result.looked_at,
+        model=result.model,
     )

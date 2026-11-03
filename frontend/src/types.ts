@@ -3,7 +3,9 @@ export type Role = 'admin' | 'qc_manager' | 'qc_analyst' | 'sales'
 export type Permission =
   | 'dashboard:view'
   | 'orders:view'
+  | 'orders:edit'
   | 'customers:view_all'
+  | 'customers:add'
   | 'specs:view'
   | 'specs:edit'
   | 'batches:view'
@@ -14,6 +16,8 @@ export type Permission =
   | 'batch:hold'
   | 'batch:reject'
   | 'audit:view'
+  | 'knowledge:view'
+  | 'knowledge:edit'
   | 'users:manage'
 
 export interface User {
@@ -47,6 +51,7 @@ export type BatchStatus =
   | 'pending_approval'
   | 'released'
   | 'rejected'
+  | 'cancelled'
 
 export interface OrderLineSummary {
   line_no: number
@@ -78,7 +83,7 @@ export interface Dashboard {
   recent_orders: OrderSummary[]
 }
 
-// ---- Batches -----------------------------------------------------------------------------
+// Batches
 
 export type Decision = 'release' | 'hold' | 'review'
 export type CoaSource = 'factory' | 'lab'
@@ -90,6 +95,7 @@ export type BatchActionType =
   | 'reject'
   | 'assign_line'
   | 'rerun_check'
+  | 'cancel'
 
 export interface Ref {
   id: number
@@ -164,6 +170,9 @@ export interface Coa {
   extraction_error: string | null
   warnings: string[]
   checked_by: string | null
+  issuer_name: string | null // as printed; `issuer` is the supplier chosen in BatchGate
+  issuer_confidence: number
+  issuer_needs_check: boolean
   product_name: string | null
   cas_number: string | null
   batch_number: string | null
@@ -171,6 +180,9 @@ export interface Coa {
   mfg_date: string | null
   test_date: string | null
   expiry_date: string | null
+  mfg_date_as_printed: string | null
+  test_date_as_printed: string | null
+  expiry_date_as_printed: string | null
   results: CoaResult[]
 }
 
@@ -227,7 +239,12 @@ export interface VerdictDetails {
   parameters: ParameterCheck[]
   identity: IdentityCheck[]
   findings: Finding[]
-  unmatched: { source: CoaSource; name_as_written: string; raw_value: string; unit: string | null }[]
+  unmatched: {
+    source: CoaSource
+    name_as_written: string
+    raw_value: string
+    unit: string | null
+  }[]
 }
 
 export interface Verdict {
@@ -297,4 +314,225 @@ export interface CatalogOptions {
   factories: SupplierRef[]
   labs: SupplierRef[]
   open_lines: LineOption[]
+}
+
+// Orders and specs
+
+export type SpecStatus = 'draft' | 'active' | 'superseded'
+export type OrderStatus = OrderSummary['status']
+
+export interface CustomerRef {
+  id: number
+  name: string
+  country: string
+  industry: string | null
+}
+
+export interface ProductRef {
+  id: number
+  name: string
+  cas_number: string | null
+}
+
+export interface ReferenceData {
+  customers: CustomerRef[]
+  products: ProductRef[]
+}
+
+export interface SpecParameterFull {
+  id: number
+  name: string
+  rule_type: RuleType
+  low: number | null
+  high: number | null
+  unit: string | null
+  expected_text: string | null
+  aliases: string[]
+  method: string | null
+  critical: boolean
+  tolerance_pct: number | null
+  tolerance_abs: number | null
+  spec_text: string
+}
+
+export interface SpecSummary {
+  id: number
+  customer: CustomerRef
+  product: ProductRef
+  grade: string
+  version: number
+  status: SpecStatus
+  effective_from: string | null
+  tests: number
+  critical_tests: number
+  open_lines: number
+  created_at: string
+}
+
+export interface SpecDetail extends SpecSummary {
+  notes: string | null
+  created_by: string | null
+  parameters: SpecParameterFull[]
+  versions: {
+    id: number
+    version: number
+    status: SpecStatus
+    effective_from: string | null
+    created_by: string | null
+    created_at: string
+    notes: string | null
+  }[]
+  current_version_id: number | null
+  used_by: {
+    line_id: number
+    order_id: number
+    po_number: string
+    line_no: number
+    quantity: number
+    unit: string
+    spec_version: number
+  }[]
+  can_edit: boolean
+}
+
+export interface SpecParameterIn {
+  name: string
+  rule_type: RuleType
+  low: number | null
+  high: number | null
+  unit: string | null
+  expected_text: string | null
+  aliases: string[]
+  method: string | null
+  critical: boolean
+  tolerance_pct: number | null
+  tolerance_abs: number | null
+}
+
+export interface OrderListItem {
+  id: number
+  po_number: string
+  customer: CustomerRef
+  order_date: string
+  status: OrderStatus
+  lines: number
+  quantity: number
+  released_quantity: number
+  batches_in_qc: number
+  on_hold: number
+}
+
+export interface OrderDetail {
+  id: number
+  po_number: string
+  customer: CustomerRef
+  order_date: string
+  status: OrderStatus
+  created_at: string
+  lines: {
+    id: number
+    line_no: number
+    product: string
+    spec_id: number
+    grade: string
+    spec_version: number
+    spec_current: boolean
+    quantity: number
+    unit: string
+    released_quantity: number
+    ready: boolean
+    batches: {
+      id: number
+      batch_number: string
+      factory: string | null
+      quantity: number | null
+      unit: string
+      status: BatchStatus
+      decision: Decision | null
+    }[]
+  }[]
+}
+
+export interface CustomerSpecs {
+  customer_id: number
+  specs: { id: number; product_id: number; product: string; grade: string; version: number }[]
+}
+
+export interface AuditEntry {
+  id: number
+  at: string
+  actor: string | null
+  action: string
+  entity_type: string
+  entity_id: number | null
+  entity_label: string | null
+  link: string | null
+  data: Record<string, unknown>
+}
+
+export interface AuditPage {
+  entries: AuditEntry[]
+  next_before: number | null
+}
+
+export interface CopilotBrief {
+  explanation: string
+  next_steps: string[]
+  history_note: string | null
+  email: { to: 'factory' | 'lab'; subject: string; body: string } | null
+  sources: { ref: string; title: string; link: string; supports: string }[]
+  looked_at: string[]
+  model: string
+}
+
+// Knowledge base
+
+export type DocumentKind = 'quality_agreement' | 'sop' | 'method' | 'other'
+
+export interface KnowledgeDocumentSummary {
+  id: number
+  title: string
+  kind: DocumentKind
+  customer: string | null
+  product: string | null
+  passages: number
+  has_file: boolean
+  added_by: string | null
+  created_at: string
+}
+
+export interface KnowledgeDocumentDetail extends KnowledgeDocumentSummary {
+  passages_list: { id: number; ref: string; section: string | null; text: string }[]
+  can_edit: boolean
+}
+
+export interface QCCaseOut {
+  id: number
+  batch_number: string
+  batch_id: number | null
+  customer: string | null
+  product: string | null
+  factory: string | null
+  problem: string
+  actions: string
+  outcome: 'released' | 'rejected'
+  closed_on: string
+  source: string
+}
+
+export interface KnowledgeOverview {
+  documents: KnowledgeDocumentSummary[]
+  cases: QCCaseOut[]
+  can_edit: boolean
+}
+
+export interface KnowledgeHit {
+  ref: string
+  score: number
+  source: string
+  kind: 'document' | 'case'
+  section: string | null
+  text: string
+  link: string
+  matched: string[]
 }

@@ -1,29 +1,35 @@
-"""Turn a result as printed on a COA ("< 0.01 %", "Complies", "131.0 – 133.5 °C") into data."""
+"""Parse printed COA results such as < 0.01 %, Complies or 131.0 - 133.5 °C."""
 
 import re
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 
 
 class Qualifier(StrEnum):
+    """A qualifier printed before a number."""
+
     EQ = "="
-    LT = "<"  # also "≤", "NMT": the true value is at or below the number
-    GT = ">"  # also "≥", "NLT": the true value is at or above the number
+    LT = "<"  # also "≤" and "NMT"
+    GT = ">"  # also "≥" and "NLT"
     NOT_DETECTED = "nd"
 
 
 @dataclass(frozen=True)
 class Measurement:
+    """A parsed result."""
+
     raw: str
     qualifier: Qualifier | None = None
     value: float | None = None
-    # For reported ranges, e.g. a melting range "131.0 – 133.5".
+    # Ranges, e.g. a melting range.
     value_high: float | None = None
     unit: str | None = None
-    text: str | None = None  # non-numeric results, e.g. "Complies"
+    text: str | None = None  # non-numeric results
 
     @property
     def is_numeric(self) -> bool:
+        """Return True when the result has a number."""
         return self.value is not None
 
 
@@ -40,12 +46,12 @@ _GT_WORDS = {">", ">=", "≥", "nlt", "not less than", "min", "min."}
 
 
 def _to_float(s: str) -> float:
-    # Some suppliers write decimal commas ("41,2"). Values here never use thousands separators.
+    """Parse a number, accepting a decimal comma."""
     return float(s.replace(",", "."))
 
 
 def parse_measurement(raw: str, unit: str | None = None) -> Measurement:
-    """Parse a printed result. The `unit` column wins over a unit embedded in the value."""
+    """Parse a printed result; the unit column wins over an inline unit."""
     text = (raw or "").strip()
     if not text:
         return Measurement(raw=raw or "")
@@ -83,8 +89,6 @@ def parse_measurement(raw: str, unit: str | None = None) -> Measurement:
     return Measurement(raw=raw, text=text, unit=unit)
 
 
-# --- Text results -------------------------------------------------------------------------
-
 _FAIL_PHRASES = (
     "does not comply",
     "doesn't comply",
@@ -120,7 +124,7 @@ _PASS_PHRASES = (
 
 
 def text_verdict(text: str) -> bool | None:
-    """True for an explicit pass statement, False for an explicit fail, None if unclear."""
+    """Return True for a pass statement, False for a fail, None if unclear."""
     t = re.sub(r"\s+", " ", text.lower()).strip()
     if any(re.search(rf"\b{re.escape(p)}\b", t) for p in _FAIL_PHRASES):
         return False
@@ -133,6 +137,7 @@ _STOP = {"a", "an", "the", "to", "and", "or", "of", "in", "with", "free", "from"
 
 
 def _words(text: str) -> set[str]:
+    """Return the meaningful words of a description."""
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOP}
 
 
@@ -140,8 +145,7 @@ _ALTERNATIVE = re.compile(r"^(.*?)\b([\w-]+)\s+(?:to|or)\s+([\w-]+)\b(.*)$", re.
 
 
 def _variants(expected: str) -> list[str]:
-    """ "White to off-white crystalline powder" -> both "White crystalline powder" and
-    "off-white crystalline powder" are acceptable descriptions."""
+    """Expand a 'X to Y' description into each acceptable variant."""
     m = _ALTERNATIVE.match(expected)
     if not m:
         return [expected]
@@ -150,14 +154,40 @@ def _variants(expected: str) -> list[str]:
 
 
 def text_matches(expected: str, observed: str) -> bool:
-    """Conservative: every meaningful word of an acceptable description must appear.
-
-    "Dark brown liquid" matches "Dark brown, clear liquid" but not "Brown liquid".
-    Anything else is left for a human (or later, the model) to judge.
-    """
+    """Return True when every word of an acceptable description appears."""
     obs = _words(observed)
     for variant in _variants(expected):
         exp = _words(variant)
         if exp and exp <= obs:
             return True
     return False
+
+
+_MONTHS = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+]  # fmt: skip
+
+
+def _month_number(word: str) -> int | None:
+    """Return a month number from its name, or None."""
+    if len(word) < 3:
+        return None
+    return next((i for i, m in enumerate(_MONTHS, start=1) if m.startswith(word)), None)
+
+
+def month_start(text: str) -> date | None:
+    """Return the first day of a month-and-year date, or None."""
+    s = text.strip().lower()
+    sep = r"\s*[\s,./'-]\s*"
+    if m := re.fullmatch(rf"([a-z]+)\.?{sep}(\d{{4}})", s):
+        month, year = _month_number(m[1]), int(m[2])
+    elif m := re.fullmatch(rf"(\d{{1,2}}){sep}(\d{{4}})", s):
+        month, year = int(m[1]), int(m[2])
+    elif m := re.fullmatch(rf"(\d{{4}}){sep}(\d{{1,2}})", s):
+        month, year = int(m[2]), int(m[1])
+    else:
+        return None
+    if month is None or not 1 <= month <= 12:
+        return None
+    return date(year, month, 1)

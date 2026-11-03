@@ -1,0 +1,269 @@
+/* Shared by the order and spec pages. */
+.page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+h1 {
+  font-size: var(--t-2xl);
+}
+
+h2 {
+  font-size: var(--t-l);
+}
+
+.sub {
+  color: var(--ink-2);
+  font-size: var(--t-s);
+  margin-top: 0.25rem;
+  max-width: 68ch;
+}
+
+.back {
+  font-size: var(--t-s);
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
+.back::before {
+  content: '‹ ';
+}
+
+.primary,
+.secondary {
+  display: inline-block;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-s);
+  font: inherit;
+  font-weight: 600;
+  font-size: var(--t-s);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primary {
+  border: 0;
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.secondary {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--t-s);
+  color: var(--approval);
+  cursor: pointer;
+}
+
+.link-btn:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.pad {
+  padding: 1.1rem 1.25rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-s);
+}
+
+th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-3);
+  padding: 0.6rem 1rem;
+}
+
+td {
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+
+td > .meta {
+  display: block;
+}
+
+.row {
+  cursor: pointer;
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--surface-2);
+}
+
+.strong-link {
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.strong-link:hover {
+  text-decoration: underline;
+}
+
+.meta {
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.right {
+  text-align: right;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+}
+
+.empty {
+  color: var(--ink-2);
+  text-align: center;
+  padding: 2.5rem 1rem;
+}
+
+.error {
+  color: var(--hold);
+  font-size: var(--t-s);
+}
+
+.notice {
+  border-radius: var(--radius-m);
+  padding: 0.8rem 1rem;
+  font-size: var(--t-s);
+  background: var(--review-bg);
+  border: 1px solid color-mix(in srgb, var(--review) 35%, transparent);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+label.field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: var(--t-s);
+  font-weight: 500;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: var(--t-s);
+  font-weight: 400;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+input:disabled,
+select:disabled {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.hint {
+  font-weight: 400;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.cancel {
+  color: var(--ink-2);
+  font-size: var(--t-s);
+}
+
+.bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--idle-bg);
+  overflow: hidden;
+  min-width: 6rem;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--release);
+}
+
+/* Inputs keep a browser default width; let them shrink to their column. */
+label.field {
+  min-width: 0;
+}
+
+label.field > input,
+label.field > select,
+label.field > textarea {
+  width: 100%;
+  min-width: 0;
+}

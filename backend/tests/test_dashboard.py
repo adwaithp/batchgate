@@ -1,3 +1,6 @@
+"""Dashboard API."""
+
+
 def test_dashboard_requires_login(client):
     assert client.get("/api/dashboard").status_code == 401
 

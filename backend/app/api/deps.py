@@ -1,3 +1,5 @@
+"""FastAPI dependencies: database session, signed-in user and permission checks."""
+
 from typing import Annotated
 
 import jwt
@@ -22,6 +24,7 @@ _credentials_error = HTTPException(
 
 
 def get_current_user(db: DbSession, token: Annotated[str, Depends(oauth2_scheme)]) -> User:
+    """Return the active user named by the bearer token, or raise 401."""
     try:
         payload = decode_access_token(token)
         user_id = int(payload["sub"])
@@ -38,9 +41,10 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def require(*needed: Permission):
-    """Dependency factory: `Depends(require(Permission.APPROVE_RELEASE))`."""
+    """Return a dependency that admits only users holding `permission`."""
 
     def checker(user: CurrentUser) -> User:
+        """Raise 403 unless the signed-in user holds the permission."""
         granted = permissions_for(user.role)
         missing = [p for p in needed if p not in granted]
         if missing:

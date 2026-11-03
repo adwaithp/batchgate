@@ -1,8 +1,4 @@
-/*
-  BatchGate design tokens.
-  A cool, lab-bench neutral base. The only strong colours are the four batch outcomes,
-  so colour on screen always means "this is the state of a batch".
-*/
+/* Design tokens. Strong colours are reserved for the four batch outcomes. */
 :root {
   --paper: #edf1f3;
   --surface: #ffffff;

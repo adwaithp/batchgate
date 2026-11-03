@@ -28,7 +28,11 @@ const queues: { key: BatchStatus | 'all'; label: string }[] = [
 ]
 
 const defaultQueue = computed<BatchStatus | 'all'>(() =>
-  auth.user?.role === 'qc_manager' ? 'pending_approval' : auth.user?.role === 'qc_analyst' ? 'pending_review' : 'all',
+  auth.user?.role === 'qc_manager'
+    ? 'pending_approval'
+    : auth.user?.role === 'qc_analyst'
+      ? 'pending_review'
+      : 'all',
 )
 
 const active = computed<BatchStatus | 'all'>(() => {
@@ -38,6 +42,7 @@ const active = computed<BatchStatus | 'all'>(() => {
     : defaultQueue.value
 })
 
+/** Number of batches in a queue. */
 function count(key: BatchStatus | 'all') {
   return key === 'all' ? all.value.length : all.value.filter((b) => b.status === key).length
 }
@@ -53,6 +58,7 @@ const rows = computed(() => {
   })
 })
 
+/** Load the batches. */
 async function load() {
   loading.value = true
   error.value = null
@@ -65,15 +71,20 @@ async function load() {
   }
 }
 
+/** Show one queue and remember it in the URL. */
 function selectQueue(key: BatchStatus | 'all') {
   router.replace({ query: { ...route.query, status: key } })
 }
 
 onMounted(load)
-watch(() => route.query.status, () => (search.value = ''))
+watch(
+  () => route.query.status,
+  () => (search.value = ''),
+)
 
 const emptyText: Record<string, string> = {
-  pending_review: 'Nothing needs review. Batches land here when the check finds something a person should look at.',
+  pending_review:
+    'Nothing needs review. Batches land here when the check finds something a person should look at.',
   pending_approval: 'No releases are waiting for approval.',
   on_hold: 'No batches are on hold.',
   awaiting_coa: 'Every registered batch has its COAs.',
@@ -89,7 +100,9 @@ const emptyText: Record<string, string> = {
         <h1>Batches</h1>
         <p class="sub">Every batch is checked against its order line’s spec before it can ship.</p>
       </div>
-      <RouterLink v-if="auth.can('coa:upload')" to="/batches/new" class="primary">Register batch</RouterLink>
+      <RouterLink v-if="auth.can('coa:upload')" to="/batches/new" class="primary"
+        >Register batch</RouterLink
+      >
     </header>
 
     <div class="bar">
@@ -134,7 +147,9 @@ const emptyText: Record<string, string> = {
             <td colspan="6" class="empty">Loading…</td>
           </tr>
           <tr v-else-if="rows.length === 0">
-            <td colspan="6" class="empty">{{ search ? 'No batches match your search.' : emptyText[active] }}</td>
+            <td colspan="6" class="empty">
+              {{ search ? 'No batches match your search.' : emptyText[active] }}
+            </td>
           </tr>
           <tr
             v-for="b in rows"
@@ -146,7 +161,9 @@ const emptyText: Record<string, string> = {
             @keydown.enter="router.push(`/batches/${b.id}`)"
           >
             <td>
-              <RouterLink :to="`/batches/${b.id}`" class="batch-no" @click.stop>{{ b.batch_number }}</RouterLink>
+              <RouterLink :to="`/batches/${b.id}`" class="batch-no" @click.stop>{{
+                b.batch_number
+              }}</RouterLink>
               <span class="meta">{{ b.product.name }} · {{ formatQty(b.quantity, b.unit) }}</span>
               <span class="meta">{{ b.factory?.name }}</span>
             </td>
@@ -170,7 +187,9 @@ const emptyText: Record<string, string> = {
               </span>
             </td>
             <td><StatusBadge v-bind="STATUS[b.status]" /></td>
-            <td class="why">{{ b.summary ?? (b.line ? '' : 'Choose which order line this batch is for.') }}</td>
+            <td class="why">
+              {{ b.summary ?? (b.line ? '' : 'Choose which order line this batch is for.') }}
+            </td>
             <td class="right meta-cell">{{ formatDateTime(b.updated_at) }}</td>
           </tr>
         </tbody>

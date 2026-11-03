@@ -13,23 +13,26 @@ const blocking = computed(() => {
   return list.length === 1 && verdict.value!.summary.endsWith(list[0]!.message) ? [] : list
 })
 
-// For a closed batch, the people's decision comes first; the check's advice second.
+// Closed batches show the people's decision first.
 const final = computed(() => {
   const b = props.batch
   if (b.status !== 'released' && b.status !== 'rejected') return null
   const action = [...b.actions]
     .reverse()
     .find((a) => a.action === (b.status === 'released' ? 'approve_release' : 'reject'))
-  const overridden = verdict.value && verdict.value.decision !== (b.status === 'released' ? 'release' : 'hold')
+  const overridden =
+    verdict.value && verdict.value.decision !== (b.status === 'released' ? 'release' : 'hold')
   return { action, released: b.status === 'released', overridden }
 })
-const notes = computed(() => verdict.value?.details.findings.filter((f) => f.severity === 'info') ?? [])
+const notes = computed(
+  () => verdict.value?.details.findings.filter((f) => f.severity === 'info') ?? [],
+)
 const notesLabel = computed(() =>
   notes.value.length === 1 ? '1 note that doesn’t' : `${notes.value.length} notes that don’t`,
 )
 const showNotes = ref(false)
 
-// When there is no verdict, say what is missing instead.
+// Without a verdict, say what is missing.
 const waiting = computed(() => {
   const b = props.batch
   if (b.status === 'released' || b.status === 'rejected') return null
@@ -38,7 +41,8 @@ const waiting = computed(() => {
       ? 'COA received. Enter its values to run the check.'
       : 'Waiting for the factory and lab COAs.'
   }
-  if (!b.line) return 'Choose which order line this batch is for, so it can be checked against that spec.'
+  if (!b.line)
+    return 'Choose which order line this batch is for, so it can be checked against that spec.'
   return null
 })
 </script>
@@ -46,7 +50,15 @@ const waiting = computed(() => {
 <template>
   <section
     class="verdict"
-    :class="final ? (final.released ? 'tone-release' : 'tone-hold') : verdict ? `tone-${DECISION[verdict.decision].tone}` : 'tone-idle'"
+    :class="
+      final
+        ? final.released
+          ? 'tone-release'
+          : 'tone-hold'
+        : verdict
+          ? `tone-${DECISION[verdict.decision].tone}`
+          : 'tone-idle'
+    "
     aria-labelledby="verdict-title"
   >
     <h2 id="verdict-title" class="visually-hidden">Check result</h2>
@@ -74,7 +86,11 @@ const waiting = computed(() => {
 
     <template v-if="verdict">
       <div v-if="!final" class="top">
-        <span class="stamp" role="img" :aria-label="`Decision: ${DECISION[verdict.decision].label}`">
+        <span
+          class="stamp"
+          role="img"
+          :aria-label="`Decision: ${DECISION[verdict.decision].label}`"
+        >
           {{ DECISION[verdict.decision].label }}
         </span>
         <p class="summary">{{ verdict.summary }}</p>
@@ -89,7 +105,12 @@ const waiting = computed(() => {
       </ul>
 
       <div v-if="notes.length" class="notes">
-        <button type="button" class="link" :aria-expanded="showNotes" @click="showNotes = !showNotes">
+        <button
+          type="button"
+          class="link"
+          :aria-expanded="showNotes"
+          @click="showNotes = !showNotes"
+        >
           {{ showNotes ? 'Hide' : 'Show' }} {{ notesLabel }} affect the decision
         </button>
         <ul v-if="showNotes">
@@ -98,8 +119,9 @@ const waiting = computed(() => {
       </div>
 
       <p class="foot">
-        Checked {{ formatDateTime(verdict.created_at) }} by the rules engine ({{ verdict.engine_version }}).
-        The decision is made by code, not by AI.
+        Checked {{ formatDateTime(verdict.created_at) }} by the rules engine ({{
+          verdict.engine_version
+        }}). The decision is made by code, not by AI.
       </p>
     </template>
 

@@ -1,7 +1,4 @@
-"""Background worker: Claude reads uploaded COAs here, outside the upload request.
-
-Run it next to the API (needs Redis):  uv run arq app.worker.WorkerSettings
-"""
+"""arq worker that reads uploaded COAs with Claude: `uv run arq app.worker.WorkerSettings`."""
 
 import asyncio
 import logging
@@ -19,6 +16,7 @@ log = logging.getLogger(__name__)
 
 
 def _extract(coa_id: int) -> str:
+    """Read one COA, store its values and publish the final event."""
     events.publish(coa_id, events.READING)
     with SessionLocal() as db:
         coa = db.get(COADocument, coa_id)
@@ -28,7 +26,7 @@ def _extract(coa_id: int) -> str:
             svc.extract_coa(db, coa)
             db.commit()
         except Exception:
-            # A bug or a locked database, not a bad document: still hand the COA to a person.
+            # An unexpected error, not a bad document: hand the COA to a person.
             log.exception("Reading COA %s failed", coa_id)
             db.rollback()
             if coa.extraction_status == ExtractionStatus.PENDING:
@@ -36,13 +34,19 @@ def _extract(coa_id: int) -> str:
                 coa.extraction_error = "Something went wrong while reading this COA."
                 db.commit()
         event = events.final_event(coa)
-    # After the commit, so the browser's reload sees the saved values.
+    # after the commit, so a reload sees the saved values
     events.publish(coa_id, event)
     return event["stage"]
 
 
+def extract_now(coa_id: int) -> str:
+    """Read a COA in this process (used when Redis is unavailable)."""
+    return _extract(coa_id)
+
+
 async def extract_coa(ctx: dict, coa_id: int) -> str:
-    # The SDK call and SQLAlchemy are synchronous; keep them off the worker's event loop.
+    # the SDK and SQLAlchemy are synchronous; keep them off the event loop
+    """arq job: read one COA."""
     return await asyncio.to_thread(_extract, coa_id)
 
 
@@ -50,6 +54,7 @@ _pool: ArqRedis | None = None
 
 
 async def enqueue_extraction(coa_id: int) -> None:
+    """Queue a COA for the worker."""
     global _pool
     if _pool is None:
         _pool = await create_pool(RedisSettings.from_dsn(get_settings().redis_url))
@@ -57,6 +62,8 @@ async def enqueue_extraction(coa_id: int) -> None:
 
 
 class WorkerSettings:
+    """arq worker configuration."""
+
     functions = [extract_coa]
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
     job_timeout = 300

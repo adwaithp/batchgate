@@ -18,3 +18,7 @@ frontend/dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Real supplier COAs and Claude's readings of them: evaluated locally, never committed
+evals/real/
+evals/results/readings/real/

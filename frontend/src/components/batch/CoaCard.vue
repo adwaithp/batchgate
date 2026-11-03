@@ -44,10 +44,11 @@ const valuesFrom = computed(() => {
   return coa.checked_by ? `${read}, checked by ${coa.checked_by}` : read
 })
 
-// While Claude reads the COA, the server streams progress; `progress` is its latest message.
+// Latest progress message while Claude reads the COA.
 const progress = ref<string | null>(null)
 let following: AbortController | null = null
 
+/** Stream reading progress from the server; returns the last event. */
 async function follow(path: string, init: RequestInit = {}): Promise<CoaEvent | null> {
   following?.abort()
   const ctrl = new AbortController()
@@ -61,7 +62,7 @@ async function follow(path: string, init: RequestInit = {}): Promise<CoaEvent | 
     })
   } catch (e) {
     if (last === null) throw e // the request itself failed, e.g. a duplicate file
-    // Otherwise the stream broke off (or the page closed it); the caller reloads the batch.
+    // Otherwise the stream ended early; the caller reloads the batch.
   } finally {
     if (following === ctrl) {
       following = null
@@ -71,10 +72,12 @@ async function follow(path: string, init: RequestInit = {}): Promise<CoaEvent | 
   return last
 }
 
+/** Reload the batch from the server. */
 async function reload() {
   emit('updated', await api.get<BatchDetail>(`/batches/${props.batchId}`))
 }
 
+/** Upload a COA file and follow its reading. */
 async function upload(withFile: boolean) {
   error.value = null
   uploading.value = true
@@ -88,7 +91,7 @@ async function upload(withFile: boolean) {
     replacing.value = false
     file.value = null
     await reload()
-    editing.value = last?.stage !== 'done' // Claude filled the values in, or a person types them
+    editing.value = last?.stage !== 'done' // edit unless Claude filled the values in
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Upload failed.'
   } finally {
@@ -96,7 +99,7 @@ async function upload(withFile: boolean) {
   }
 }
 
-// After a page reload (or an upload from the register-batch form), pick the reading up again.
+// Resume following a reading after a reload or an upload from the register form.
 watch(
   () => props.coa?.id,
   async () => {
@@ -113,6 +116,7 @@ watch(
 )
 onBeforeUnmount(() => following?.abort())
 
+/** Open the uploaded COA file. */
 async function openFile() {
   if (!props.coa) return
   try {
@@ -122,6 +126,7 @@ async function openFile() {
   }
 }
 
+/** Close the form and pass the updated batch on. */
 function onSaved(detail: BatchDetail) {
   editing.value = false
   emit('updated', detail)
@@ -134,7 +139,9 @@ function onSaved(detail: BatchDetail) {
       <h3>{{ SOURCE[source] }}</h3>
       <span v-if="coa && !needsValues" class="state ok">Values in</span>
       <span v-else-if="progress" class="state wait">Reading…</span>
-      <span v-else-if="coa?.extraction_status === 'failed'" class="state wait">Not read automatically</span>
+      <span v-else-if="coa?.extraction_status === 'failed'" class="state wait"
+        >Not read automatically</span
+      >
       <span v-else-if="needsValues" class="state wait">Values not entered</span>
       <span v-else class="state none">Not received</span>
     </header>
@@ -146,12 +153,17 @@ function onSaved(detail: BatchDetail) {
       </div>
       <div>
         <dt>Received</dt>
-        <dd>{{ formatDateTime(coa.uploaded_at) }}<template v-if="coa.uploaded_by">, {{ coa.uploaded_by }}</template></dd>
+        <dd>
+          {{ formatDateTime(coa.uploaded_at)
+          }}<template v-if="coa.uploaded_by">, {{ coa.uploaded_by }}</template>
+        </dd>
       </div>
       <div>
         <dt>Document</dt>
         <dd>
-          <button v-if="coa.has_file" type="button" class="link" @click="openFile">{{ coa.original_filename }}</button>
+          <button v-if="coa.has_file" type="button" class="link" @click="openFile">
+            {{ coa.original_filename }}
+          </button>
           <span v-else>Values typed in, no file</span>
         </dd>
       </div>
@@ -182,7 +194,11 @@ function onSaved(detail: BatchDetail) {
       </label>
       <label>
         COA file
-        <input type="file" accept="application/pdf,image/png,image/jpeg" @change="file = ($event.target as HTMLInputElement).files?.[0] ?? null" />
+        <input
+          type="file"
+          accept="application/pdf,image/png,image/jpeg"
+          @change="file = ($event.target as HTMLInputElement).files?.[0] ?? null"
+        />
       </label>
       <div class="row-actions">
         <button type="button" class="primary" :disabled="!file || uploading" @click="upload(true)">
@@ -191,9 +207,13 @@ function onSaved(detail: BatchDetail) {
         <button type="button" class="link" :disabled="uploading" @click="upload(false)">
           No file? Type the values in instead
         </button>
-        <button v-if="replacing" type="button" class="link" @click="replacing = false">Cancel</button>
+        <button v-if="replacing" type="button" class="link" @click="replacing = false">
+          Cancel
+        </button>
       </div>
-      <p v-if="replacing" class="muted">The current {{ SOURCE[source] }} is kept on record but stops counting.</p>
+      <p v-if="replacing" class="muted">
+        The current {{ SOURCE[source] }} is kept on record but stops counting.
+      </p>
     </div>
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
