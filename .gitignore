@@ -22,3 +22,7 @@ frontend/dist/
 # Real supplier COAs and Claude's readings of them: evaluated locally, never committed
 evals/real/
 evals/results/readings/real/
+
+# Local scratch and secrets
+_to_delete/
+*.pem

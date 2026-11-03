@@ -93,7 +93,7 @@ services:
       - "443:443"
     environment:
       # Empty: plain HTTP on the server's IP. A domain pointing here: automatic HTTPS.
-      DOMAIN: ${DOMAIN:-}
+      DOMAIN: ${DOMAIN:-:80}
     volumes:
       - caddy_data:/data
       - caddy_config:/config
