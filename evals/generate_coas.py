@@ -1,12 +1,9 @@
 # ruff: noqa: E501  (HTML templates read better unwrapped)
-"""Fictional COA documents with known answers: for trying the reader in the UI, and for evals.
+"""Generate fictional COAs with known answers for the reader evals and UI demos.
 
-    cd backend && uv run python ../evals/generate_coas.py
+  cd backend && uv run python ../evals/generate_coas.py
 
-Writes evals/coas/ (PDFs, a phone photo and manifest.json). Every document is for the seeded
-batch FC-2611-12 (Ferric Chloride, PO-1042 line 1). Before anything is written, each
-document's expected decision is checked with the real rules engine against the seeded spec,
-so the answers can't drift from the spec. Companies are the seed's fictional ones.
+Writes evals/coas/ and checks each expected decision with the real engine.
 """
 
 import io
@@ -38,6 +35,8 @@ BATCH = "FC-2611-12"
 
 @dataclass
 class Row:
+    """One result row on a generated COA."""
+
     name: str
     limit: str
     result: str
@@ -47,6 +46,8 @@ class Row:
 
 @dataclass
 class Coa:
+    """A generated COA."""
+
     source: CoaSource
     issuer: str
     batch_number: str
@@ -74,7 +75,7 @@ FACTORY = Coa(
     ],
 )
 
-# The lab names the same tests differently, orders its columns differently and tests a day later.
+# The lab names, orders and dates its tests differently.
 LAB = Coa(
     source=CoaSource.LAB,
     issuer="Northbridge Analytical Labs",
@@ -94,21 +95,25 @@ LAB = Coa(
 
 
 def with_row(coa: Coa, name: str, **changes) -> Coa:
+    """Return the COA with one row changed."""
     rows = [replace(r, **changes) if r.name == name else r for r in coa.rows]
     return replace(coa, rows=rows)
 
 
 def without_row(coa: Coa, name: str) -> Coa:
+    """Return the COA without one row."""
     return replace(coa, rows=[r for r in coa.rows if r.name != name])
 
 
 @dataclass
 class Doc:
+    """A generated document with its expected decision."""
+
     file: str
     coa: Coa
     expect: Decision
     why: str
-    look: str = "clean"  # clean | scan (scanned into a PDF) | photo (phone picture, JPEG)
+    look: str = "clean"  # clean, scan or photo
 
 
 DOCS = [
@@ -161,10 +166,8 @@ DOCS = [
 ]
 
 
-# ---- Checking the answers with the real engine ---------------------------------------------
-
-
 def ferric_spec() -> SpecInput:
+    """Return the seeded ferric chloride spec as engine input."""
     spec = next(s for s in SPECS if s["product"] == "Ferric Chloride")
     return SpecInput(
         product_name="Ferric Chloride",
@@ -189,9 +192,11 @@ def ferric_spec() -> SpecInput:
 
 
 def coa_input(coa: Coa) -> CoaInput:
+    """Convert a generated COA to engine input."""
     return CoaInput(
         source=coa.source,
         issuer_name=coa.issuer,
+        expected_issuer=FACTORY.issuer if coa.source == CoaSource.FACTORY else LAB.issuer,
         product_name=coa.product_name,
         cas_number=coa.cas_number,
         batch_number=coa.batch_number,
@@ -203,14 +208,12 @@ def coa_input(coa: Coa) -> CoaInput:
 
 
 def engine_decision(doc: Doc) -> tuple[Decision, str]:
-    """The decision with this document and the clean COA from the other source."""
+    """Return the engine's decision for a document plus the other clean COA."""
     partner = LAB if doc.coa.source == CoaSource.FACTORY else FACTORY
     batch = BatchInput(BATCH, [coa_input(doc.coa), coa_input(partner)])
     result = check_batch(ferric_spec(), batch)
     return result.decision, result.summary
 
-
-# ---- Rendering -----------------------------------------------------------------------------
 
 CSS = """
 * { font-family: sans-serif; color: #1b1b1b; }
@@ -226,10 +229,12 @@ th { background: #e6e6e6; }
 
 
 def _fmt(d: date, lab: bool) -> str:
+    """Format a date the way each issuer prints it."""
     return d.strftime("%d.%m.%Y") if lab else d.isoformat()
 
 
 def factory_html(coa: Coa) -> str:
+    """Render a factory COA as HTML."""
     rows = "".join(
         f"<tr><td>{i}</td><td>{r.name}</td><td>{r.limit}</td><td>{r.result}</td>"
         f"<td>{r.unit or '-'}</td><td>{r.method}</td></tr>"
@@ -255,6 +260,7 @@ def factory_html(coa: Coa) -> str:
 
 
 def lab_html(coa: Coa) -> str:
+    """Render a lab COA as HTML."""
     rows = "".join(
         f"<tr><td>{r.name}</td><td>{r.method}</td><td>{r.unit or '—'}</td><td><b>{r.result}</b></td>"
         f"<td>{r.limit}</td></tr>"
@@ -281,6 +287,7 @@ This report shall not be reproduced except in full without written approval of t
 
 
 def render_pdf(coa: Coa) -> bytes:
+    """Render a COA as a one-page A4 PDF."""
     doc = pymupdf.open()
     page = doc.new_page(width=595, height=842)  # A4
     html = factory_html(coa) if coa.source == CoaSource.FACTORY else lab_html(coa)
@@ -289,13 +296,14 @@ def render_pdf(coa: Coa) -> bytes:
 
 
 def _raster(pdf: bytes, dpi: int) -> Image.Image:
+    """Rasterise the first page of a PDF."""
     page = pymupdf.open(stream=pdf, filetype="pdf")[0]
     pix = page.get_pixmap(dpi=dpi)
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
 
 
 def scanned(pdf: bytes) -> bytes:
-    """A skewed, slightly blurred and noisy greyscale scan, as an image-only PDF."""
+    """Turn a PDF into a skewed, noisy image-only scan."""
     img = _raster(pdf, 120).convert("L")
     img = img.rotate(1.3, resample=Image.BICUBIC, expand=True, fillcolor=255)
     img = img.filter(ImageFilter.GaussianBlur(0.7))
@@ -311,7 +319,7 @@ def scanned(pdf: bytes) -> bytes:
 
 
 def photo(pdf: bytes) -> bytes:
-    """A phone photo: tilted page on a desk, warm uneven light, soft focus."""
+    """Turn a PDF into a tilted phone photo in uneven light."""
     page = _raster(pdf, 110)
     page = page.rotate(-3.5, resample=Image.BICUBIC, expand=True, fillcolor=(120, 104, 86))
     w, h = page.size
@@ -327,10 +335,8 @@ def photo(pdf: bytes) -> bytes:
     return buf.getvalue()
 
 
-# ---- Main ----------------------------------------------------------------------------------
-
-
 def main() -> None:
+    """Write every document and the manifest, verifying expected decisions."""
     problems = []
     for doc in DOCS:
         decision, summary = engine_decision(doc)
@@ -357,6 +363,7 @@ def main() -> None:
                 "expected_decision": doc.expect.value,
                 "why": doc.why,
                 "truth": {
+                    "issuer_name": c.issuer,
                     "product_name": c.product_name,
                     "cas_number": c.cas_number,
                     "batch_number": c.batch_number,
@@ -364,6 +371,10 @@ def main() -> None:
                     "mfg_date": c.mfg_date.isoformat(),
                     "test_date": c.test_date.isoformat(),
                     "expiry_date": c.expiry_date.isoformat(),
+                    **{
+                        f"{k}_as_printed": _fmt(getattr(c, k), c.source == CoaSource.LAB)
+                        for k in ("mfg_date", "test_date", "expiry_date")
+                    },
                     "results": [
                         {"name_as_written": r.name, "raw_value": r.result, "unit": r.unit or None}
                         for r in c.rows

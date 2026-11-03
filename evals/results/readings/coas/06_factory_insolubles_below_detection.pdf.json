@@ -1,0 +1,87 @@
+{
+ "model": "claude-sonnet-5-5",
+ "read_at": "2026-11-03T11:57:16+00:00",
+ "reading": {
+  "is_coa": true,
+  "issuer_name": "Kutch Coastal Chemicals",
+  "issuer_confidence": 1.0,
+  "product_name": "Ferric Chloride Solution 40%",
+  "cas_number": "7705-08-0",
+  "batch_number": "FC-2611-12",
+  "po_reference": "PO-1042",
+  "mfg_date": "2026-10-29",
+  "test_date": "2026-10-30",
+  "expiry_date": "2027-10-28",
+  "mfg_date_as_printed": "2026-10-29",
+  "test_date_as_printed": "2026-10-30",
+  "expiry_date_as_printed": "2027-10-28",
+  "results": [
+   {
+    "name_as_written": "FeCl3 content",
+    "raw_value": "40.8",
+    "unit": "%",
+    "method": "IS 711",
+    "limit_as_printed": "min 40.0",
+    "confidence": 1.0,
+    "parameter_id": 1
+   },
+   {
+    "name_as_written": "Total iron (as Fe)",
+    "raw_value": "14.0",
+    "unit": "%",
+    "method": "IS 711",
+    "limit_as_printed": "min 13.8",
+    "confidence": 1.0,
+    "parameter_id": 2
+   },
+   {
+    "name_as_written": "Free acid (as HCl)",
+    "raw_value": "0.28",
+    "unit": "%",
+    "method": "Titrimetric",
+    "limit_as_printed": "max 0.5",
+    "confidence": 1.0,
+    "parameter_id": 3
+   },
+   {
+    "name_as_written": "Ferrous iron (Fe2+)",
+    "raw_value": "0.10",
+    "unit": "%",
+    "method": "KMnO4 titration",
+    "limit_as_printed": "max 0.25",
+    "confidence": 1.0,
+    "parameter_id": 4
+   },
+   {
+    "name_as_written": "Insoluble matter",
+    "raw_value": "< 0.2",
+    "unit": "%",
+    "method": "Gravimetric",
+    "limit_as_printed": "max 0.1",
+    "confidence": 1.0,
+    "parameter_id": 5
+   },
+   {
+    "name_as_written": "Specific gravity @ 25 \u00b0C",
+    "raw_value": "1.43",
+    "unit": null,
+    "method": "Hydrometer",
+    "limit_as_printed": "1.40 - 1.45",
+    "confidence": 1.0,
+    "parameter_id": 6
+   },
+   {
+    "name_as_written": "Appearance",
+    "raw_value": "Dark brown liquid",
+    "unit": null,
+    "method": "Visual",
+    "limit_as_printed": "Dark brown liquid",
+    "confidence": 1.0,
+    "parameter_id": 7
+   }
+  ],
+  "warnings": [
+   "Insoluble matter result is printed as \"< 0.2\" while the printed limit is max 0.1; the remarks state the material complies, but the result does not clearly demonstrate this."
+  ]
+ }
+}

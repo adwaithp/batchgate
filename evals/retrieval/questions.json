@@ -1,0 +1,197 @@
+[
+ {
+  "q": "retest policy",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.2 Retests"
+  ]
+ },
+ {
+  "q": "Can we retest when insoluble matter is above the limit?",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.2 Retests"
+  ]
+ },
+ {
+  "q": "concession insoluble matter",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.3 Concessions"
+  ]
+ },
+ {
+  "q": "will Ridgeway accept a concession on appearance",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.3 Concessions"
+  ]
+ },
+ {
+  "q": "notify customer when a batch is put on hold",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|3 Notification"
+  ]
+ },
+ {
+  "q": "COA issued in another company's name or catalogue sheet",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|2.1 (Certificates of analysis)",
+   "case:MT-2609-08"
+  ]
+ },
+ {
+  "q": "typical values sheet instead of batch COA",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "MEA Triazine",
+  "answers": [
+   "case:MT-2609-08",
+   "Ridgeway Industrial Supply: quality agreement|2.1 (Certificates of analysis)"
+  ]
+ },
+ {
+  "q": "factory and lab results disagree which one counts",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|5 Factory and laboratory results that disagree"
+  ]
+ },
+ {
+  "q": "lab insolubles higher than factory, sampling from IBC",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "case:FC-2608-15",
+   "Method note: insoluble matter in ferric chloride solution|2 Common causes of high results"
+  ]
+ },
+ {
+  "q": "water insolubles failed before at Kutch Coastal",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "case:FC-2608-15",
+   "case:FC-2606-02"
+  ]
+ },
+ {
+  "q": "what causes high insoluble matter results",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Method note: insoluble matter in ferric chloride solution|2 Common causes of high results"
+  ]
+ },
+ {
+  "q": "how close should two labs agree on insolubles",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Method note: insoluble matter in ferric chloride solution|4 Agreement between laboratories"
+  ]
+ },
+ {
+  "q": "can we average the original and retest result",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.2 Retests",
+   "SOP QC-07: handling out-of-specification and doubtful results|4 Phase 3: retest"
+  ]
+ },
+ {
+  "q": "assay difference factory versus lab",
+  "customer": "Lumora Personal Care",
+  "product": "Piroctone Olamine",
+  "answers": [
+   "Lumora Personal Care: quality agreement|4 Factory and laboratory results that disagree",
+   "case:PO-2607-B"
+  ]
+ },
+ {
+  "q": "as-is or dried basis assay",
+  "customer": "Lumora Personal Care",
+  "product": "Piroctone Olamine",
+  "answers": [
+   "Lumora Personal Care: quality agreement|2.1 (Certificates of analysis)",
+   "case:PO-2607-B",
+   "SOP QC-07: handling out-of-specification and doubtful results|2 Phase 1: check the data (same day)"
+  ]
+ },
+ {
+  "q": "who may retest a Lumora batch",
+  "customer": "Lumora Personal Care",
+  "product": "Piroctone Olamine",
+  "answers": [
+   "Lumora Personal Care: quality agreement|3.2 (Out-of-specification results)"
+  ]
+ },
+ {
+  "q": "Lumora concession on assay",
+  "customer": "Lumora Personal Care",
+  "product": "Piroctone Olamine",
+  "answers": [
+   "Lumora Personal Care: quality agreement|3.1 (Out-of-specification results)"
+  ]
+ },
+ {
+  "q": "what to ask the factory when a result is out of spec",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "SOP QC-07: handling out-of-specification and doubtful results|3 Phase 2: ask the factory (within 1 working day)"
+  ]
+ },
+ {
+  "q": "same factory failing the same test twice",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "SOP QC-07: handling out-of-specification and doubtful results|6 Factory trends"
+  ]
+ },
+ {
+  "q": "how long do we keep COAs",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|6 Records"
+  ]
+ },
+ {
+  "q": "free HCl above max, what does the customer allow?",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.3 Concessions"
+  ],
+  "note": "COA wording; the agreement says free acid"
+ },
+ {
+  "q": "density ratio slightly high, what does the customer allow?",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.3 Concessions"
+  ],
+  "note": "COA wording; the agreement says specific gravity"
+ },
+ {
+  "q": "total iron low, what does the customer allow?",
+  "customer": "Ridgeway Industrial Supply",
+  "product": "Ferric Chloride",
+  "answers": [
+   "Ridgeway Industrial Supply: quality agreement|4.3 Concessions"
+  ],
+  "note": "COA wording; the agreement says iron content"
+ }
+]

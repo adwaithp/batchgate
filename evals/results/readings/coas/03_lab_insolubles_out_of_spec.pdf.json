@@ -1,0 +1,92 @@
+{
+ "model": "claude-sonnet-5-5",
+ "read_at": "2026-11-03T11:56:59+00:00",
+ "reading": {
+  "is_coa": true,
+  "issuer_name": "Northbridge Analytical Labs",
+  "issuer_confidence": 1.0,
+  "product_name": "Ferric Chloride Solution 40%",
+  "cas_number": "7705-08-0",
+  "batch_number": "FC-2611-12",
+  "po_reference": null,
+  "mfg_date": "2026-10-29",
+  "test_date": "2026-10-31",
+  "expiry_date": "2027-10-28",
+  "mfg_date_as_printed": "29.10.2026",
+  "test_date_as_printed": "31.10.2026",
+  "expiry_date_as_printed": "28.10.2027",
+  "results": [
+   {
+    "name_as_written": "Assay as FeCl3",
+    "raw_value": "40.6",
+    "unit": "% w/w",
+    "method": "NAL-WI-112",
+    "limit_as_printed": "\u2265 40.0",
+    "confidence": 1.0,
+    "parameter_id": 1
+   },
+   {
+    "name_as_written": "Fe",
+    "raw_value": "13.95",
+    "unit": "% w/w",
+    "method": "NAL-WI-112",
+    "limit_as_printed": "\u2265 13.8",
+    "confidence": 1.0,
+    "parameter_id": 2
+   },
+   {
+    "name_as_written": "Free acidity",
+    "raw_value": "0.30",
+    "unit": "% w/w",
+    "method": "NAL-WI-118",
+    "limit_as_printed": "\u2264 0.5",
+    "confidence": 1.0,
+    "parameter_id": 3
+   },
+   {
+    "name_as_written": "Fe(II)",
+    "raw_value": "0.11",
+    "unit": "% w/w",
+    "method": "NAL-WI-121",
+    "limit_as_printed": "\u2264 0.25",
+    "confidence": 1.0,
+    "parameter_id": 4
+   },
+   {
+    "name_as_written": "Water insolubles",
+    "raw_value": "0.16",
+    "unit": "% w/w",
+    "method": "NAL-WI-130",
+    "limit_as_printed": "\u2264 0.10",
+    "confidence": 1.0,
+    "parameter_id": 5
+   },
+   {
+    "name_as_written": "SG",
+    "raw_value": "1.432",
+    "unit": null,
+    "method": "Density meter",
+    "limit_as_printed": "1.40 \u2013 1.45",
+    "confidence": 1.0,
+    "parameter_id": 6
+   },
+   {
+    "name_as_written": "Appearance",
+    "raw_value": "Complies",
+    "unit": null,
+    "method": "Visual",
+    "limit_as_printed": "Dark brown liquid",
+    "confidence": 1.0,
+    "parameter_id": 7
+   }
+  ],
+  "warnings": [
+   "Issued by an independent testing laboratory (Northbridge Analytical Labs), not the manufacturer; manufacturer is listed as Kutch Coastal Chemicals.",
+   "Document is titled Test Report (Report No. NAL/26/10/4471), not Certificate of Analysis.",
+   "Water insolubles result 0.16 is printed above its stated limit of \u2264 0.10.",
+   "SG temperature is not printed.",
+   "Appearance result is printed as 'Complies' only; the description 'Dark brown liquid' appears in the limits column.",
+   "No PO reference printed."
+  ]
+ }
+}

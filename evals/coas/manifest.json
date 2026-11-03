@@ -9,6 +9,7 @@
     "expected_decision": "release",
     "why": "Everything in spec.",
     "truth": {
+      "issuer_name": "Kutch Coastal Chemicals",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -16,6 +17,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-30",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "2026-10-29",
+      "test_date_as_printed": "2026-10-30",
+      "expiry_date_as_printed": "2027-10-28",
       "results": [
         {
           "name_as_written": "FeCl3 content",
@@ -65,6 +69,7 @@
     "expected_decision": "release",
     "why": "Agrees with the factory within tolerance.",
     "truth": {
+      "issuer_name": "Northbridge Analytical Labs",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -72,6 +77,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-31",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "29.10.2026",
+      "test_date_as_printed": "31.10.2026",
+      "expiry_date_as_printed": "28.10.2027",
       "results": [
         {
           "name_as_written": "Assay as FeCl3",
@@ -121,6 +129,7 @@
     "expected_decision": "hold",
     "why": "Lab finds insoluble matter at 0.16 % against max 0.1 %.",
     "truth": {
+      "issuer_name": "Northbridge Analytical Labs",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -128,6 +137,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-31",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "29.10.2026",
+      "test_date_as_printed": "31.10.2026",
+      "expiry_date_as_printed": "28.10.2027",
       "results": [
         {
           "name_as_written": "Assay as FeCl3",
@@ -177,6 +189,7 @@
     "expected_decision": "release",
     "why": "Same values as 01, but a skewed, noisy scan (no text layer).",
     "truth": {
+      "issuer_name": "Kutch Coastal Chemicals",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -184,6 +197,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-30",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "2026-10-29",
+      "test_date_as_printed": "2026-10-30",
+      "expiry_date_as_printed": "2027-10-28",
       "results": [
         {
           "name_as_written": "FeCl3 content",
@@ -233,6 +249,7 @@
     "expected_decision": "review",
     "why": "Assay reported as % w/v; it can't be converted to % w/w without the density.",
     "truth": {
+      "issuer_name": "Kutch Coastal Chemicals",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -240,6 +257,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-30",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "2026-10-29",
+      "test_date_as_printed": "2026-10-30",
+      "expiry_date_as_printed": "2027-10-28",
       "results": [
         {
           "name_as_written": "FeCl3 content",
@@ -289,6 +309,7 @@
     "expected_decision": "review",
     "why": "'< 0.2' doesn't prove the value is below the 0.1 % limit.",
     "truth": {
+      "issuer_name": "Kutch Coastal Chemicals",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -296,6 +317,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-30",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "2026-10-29",
+      "test_date_as_printed": "2026-10-30",
+      "expiry_date_as_printed": "2027-10-28",
       "results": [
         {
           "name_as_written": "FeCl3 content",
@@ -345,6 +369,7 @@
     "expected_decision": "review",
     "why": "The COA is for batch FC-2611-21, not FC-2611-12.",
     "truth": {
+      "issuer_name": "Kutch Coastal Chemicals",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-21",
@@ -352,6 +377,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-30",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "2026-10-29",
+      "test_date_as_printed": "2026-10-30",
+      "expiry_date_as_printed": "2027-10-28",
       "results": [
         {
           "name_as_written": "FeCl3 content",
@@ -401,6 +429,7 @@
     "expected_decision": "review",
     "why": "Ferrous iron, a critical parameter, is not reported.",
     "truth": {
+      "issuer_name": "Kutch Coastal Chemicals",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -408,6 +437,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-30",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "2026-10-29",
+      "test_date_as_printed": "2026-10-30",
+      "expiry_date_as_printed": "2027-10-28",
       "results": [
         {
           "name_as_written": "FeCl3 content",
@@ -452,6 +484,7 @@
     "expected_decision": "release",
     "why": "Same values as 01, photographed at an angle in poor light.",
     "truth": {
+      "issuer_name": "Kutch Coastal Chemicals",
       "product_name": "Ferric Chloride Solution 40%",
       "cas_number": "7705-08-0",
       "batch_number": "FC-2611-12",
@@ -459,6 +492,9 @@
       "mfg_date": "2026-10-29",
       "test_date": "2026-10-30",
       "expiry_date": "2027-10-28",
+      "mfg_date_as_printed": "2026-10-29",
+      "test_date_as_printed": "2026-10-30",
+      "expiry_date_as_printed": "2027-10-28",
       "results": [
         {
           "name_as_written": "FeCl3 content",
