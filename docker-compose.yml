@@ -1,0 +1,105 @@
+# BatchGate on one server (an AWS EC2 instance for the demo), as five services:
+#   db        PostgreSQL 16, data in the pgdata volume
+#   redis     the queue between the api and the worker, and COA-reading progress
+#   api       FastAPI; applies migrations (and demo data if the database is empty) on start
+#   worker    arq; Claude reads uploaded COAs here
+#   frontend  Caddy serving the Vue app and forwarding /api to the api; the only public service
+#
+#   cp .env.example .env    # fill it in
+#   docker compose up -d --build
+# Full guide: docs/deploy-ec2.md
+
+x-backend: &backend
+  build: ./backend
+  restart: unless-stopped
+  environment: &backend-env
+    BATCHGATE_DB_HOST: db
+    BATCHGATE_DB_PORT: 5432
+    BATCHGATE_DB_NAME: ${BATCHGATE_DB_NAME:-batchgate}
+    BATCHGATE_DB_USER: ${BATCHGATE_DB_USER:-batchgate}
+    BATCHGATE_DB_PASSWORD: ${BATCHGATE_DB_PASSWORD:?set BATCHGATE_DB_PASSWORD in .env}
+    BATCHGATE_REDIS_URL: redis://redis:6379
+    BATCHGATE_EXTRACTION_MODE: queue
+    BATCHGATE_UPLOAD_DIR: /data/uploads
+    BATCHGATE_SECRET_KEY: ${BATCHGATE_SECRET_KEY:?set BATCHGATE_SECRET_KEY in .env}
+    BATCHGATE_DEMO_MODE: ${BATCHGATE_DEMO_MODE:-true}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    TZ: UTC
+  volumes:
+    # The api saves uploaded COAs here and the worker opens them, so both mount it.
+    - uploads:/data/uploads
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${BATCHGATE_DB_NAME:-batchgate}
+      POSTGRES_USER: ${BATCHGATE_DB_USER:-batchgate}
+      POSTGRES_PASSWORD: ${BATCHGATE_DB_PASSWORD:?set BATCHGATE_DB_PASSWORD in .env}
+      TZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No ports: only the api and worker can reach it.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]  # a queue, not a store
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *backend
+    command: ["sh", "start.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    <<: *backend
+    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      # The api runs the migrations; the worker starts once the tables exist.
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Empty: plain HTTP on the server's IP. A domain pointing here: automatic HTTPS.
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

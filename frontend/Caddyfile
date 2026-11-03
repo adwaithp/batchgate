@@ -1,0 +1,20 @@
+# {$DOMAIN::80}: the domain from the environment (automatic HTTPS), or plain HTTP on :80.
+{$DOMAIN::80} {
+	encode gzip
+
+	# The API, its interactive docs, and the live COA-reading stream (flush_interval -1 sends
+	# each progress event straight through instead of buffering it).
+	@api path /api/* /docs /docs/* /openapi.json
+	handle @api {
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
+
+	# The Vue app: real files as they are, every other path gets index.html for the router.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
